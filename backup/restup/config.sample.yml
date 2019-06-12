@@ -1,0 +1,16 @@
+tasks:
+  - repository: /var/restic/database
+    password: "2dkNKCVT9AgFaV8g"
+    path: /var/databases
+    prespawn: hooks/db_pre.sh
+    postspawn: hooks/db_post.sh
+  - repository: /var/restic/acl
+    password: "bEQokh6iQm9rwmfz"
+    path: /var/acls
+    prespawn: hooks/acl_pre.sh
+    postspawn: hooks/acl_post.sh
+  - repository: /var/restic/log
+    password: "gjUMKMDcVHwN9Jah"
+    path: /var/log
+    regexes:
+      - "*.gz"

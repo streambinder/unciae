@@ -1,0 +1,1 @@
+This repository purpose is to keep scripts, utilities and snippets, written both for work and personal purposes, that solve common daily problems and systems operations, in a safe place.

@@ -47,7 +47,7 @@ class Restup:
                 subprocess.run(task['prespawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
                 print(
-                    'Pre-task for {} exited abnormally. Breaking up backup.'.format(task['repository']))
+                    'Pre-task for {} exited abnormally. Breaking up backup.'.format(task['repository']), file=sys.stderr)
                 return
 
         print('Spawning {} directory restic backup'.format(task['path']))
@@ -60,14 +60,18 @@ class Restup:
         pipe_restic = subprocess.Popen(
             ['restic', '-r', task['repository'], 'backup', task['path'], '--exclude-caches'] + regexes, stdin=pipe_auth.stdout, stdout=subprocess.PIPE)
         pipe_auth.stdout.close()
-        output, err = pipe_restic.communicate()
+        pipe_out, pipe_err = pipe_restic.communicate()
+        if pipe_err is not None:
+            print('Unable to backup {} repository: {}'.format(
+                task['respository'], str(pipe_err)), file=sys.stderr)
+            return
 
         if 'postspawn' in task:
             try:
                 subprocess.run(task['postspawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
                 print(
-                    'Post-task for {} exited abnormally'.format(task['repository']))
+                    'Post-task for {} exited abnormally'.format(task['repository']), file=sys.stderr)
 
         print('Repository {} is up-to-date'.format(task['repository']))
 
@@ -90,4 +94,4 @@ if __name__ == '__main__':
         with open(cfg_path, 'r') as yml_stream:
             Restup(yaml.safe_load(yml_stream)).run()
     except Exception as e:
-        print(e)
+        print(e, file=sys.stderr)

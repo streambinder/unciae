@@ -29,6 +29,10 @@ class Restup:
                 if mandatory_token not in t or t[mandatory_token] is None:
                     raise Exception(
                         '{} key is mandatory for a task object'.format(mandatory_token))
+            for recommended_token in ['retention']:
+                if recommended_token not in t or t[recommended_token] is None:
+                    print('Task for {} has not {} token: it\'s highly recommended.'.format(
+                        t['repository'], recommended_token), file=sys.stderr)
             path_checks = ['repository', 'path']
             path_checks += ['prespawn'] if 'prespawn' in t else []
             path_checks += ['postspawn'] if 'postspawn' in t else []
@@ -72,6 +76,17 @@ class Restup:
             except subprocess.CalledProcessError:
                 print(
                     'Post-task for {} exited abnormally'.format(task['repository']), file=sys.stderr)
+
+        if 'retention' in task:
+            pipe_auth = subprocess.Popen(['echo', '{}'.format(
+                task['password'])], stdout=subprocess.PIPE)
+            pipe_restic = subprocess.Popen(
+                ['restic', '-r', task['repository'], 'forget', '--keep-within', task['retention']], stdin=pipe_auth.stdout, stdout=subprocess.PIPE)
+            pipe_auth.stdout.close()
+            pipe_out, pipe_err = pipe_restic.communicate()
+            if pipe_err is not None:
+                print('Unable to apply retention on {} repository: {}'.format(
+                    task['respository'], str(pipe_err)), file=sys.stderr)
 
         print('Repository {} is up-to-date'.format(task['repository']))
 

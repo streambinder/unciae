@@ -44,7 +44,7 @@ fi
 
 # effective script
 
-find "${TARGET}" -type f | while read -r fname; do
+find "${TARGET}" -type f -exec file {} \; | grep -o -P '^.+: \w+ image' | awk -F':' '{print $1}' | while read -r fname; do
 
     # get image data
     img_data="$(exiftool "${fname}")"

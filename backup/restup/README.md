@@ -30,11 +30,13 @@ tasks:
   - repository: /var/restic/firstrepo
     password: "P4sSw0Rd1" # the one used during init stage
     path: /root
+    retention: 1y2m
     prespawn: echo "content" > /root/sample.txt
     postspawn: /usr/local/sbin/post_backup.sh
   - repository: /var/restic/latterone
     password: "P4sSw0Rd2"
     path: /etc
+    retention: 1m
     regexes:
       - "*.log"
       - "*.log*.gz"
@@ -48,6 +50,8 @@ The resulting commands spawned by the script would be:
   echo "P4sSw0Rd1" | restic -r /var/restic/firstrepo \
       backup /root --exclude-caches
   /usr/local/sbin/post_backup.sh
+  echo "P4sSw0Rd1" | restic -r /var/restic/firstrepo \
+      forget --keep-within 1y2m
   ```
 - `latterone`:
   ```bash
@@ -56,6 +60,8 @@ The resulting commands spawned by the script would be:
       --iexclude "*.log" \
       --iexclude "*.log*.gz" \
       --iexclude "*/tmp/*"
+  echo "P4sSw0Rd2" | restic -r /var/restic/latterone \
+      forget --keep-within 1m
   ```
 
 Also, all the tasks will be processed in dedicated threads.

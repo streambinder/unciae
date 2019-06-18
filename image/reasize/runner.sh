@@ -9,29 +9,29 @@ function help() { echo -e "Usage:\n\t$(basename $0) <MAX_WIDTHxMAX_HEIGHT> [-t <
 # arguments parsing
 
 while [[ $# -gt 0 ]]; do
-	case "$1" in
-		-h|--help)
-			help
-			;;
-		-t|--target)
-			TARGET="$2"
-			shift
-			;;
+    case "$1" in
+        -h|--help)
+            help
+            ;;
+        -t|--target)
+            TARGET="$2"
+            shift
+            ;;
         *)
             SIZE=$1
             ;;
-	esac
-	shift
+    esac
+    shift
 done
 
 # arguments validation
 
 if [ -z ${TARGET} ]; then
-	TARGET="$(pwd)"
+    TARGET="$(pwd)"
 fi
 
 if [ -z ${SIZE} ]; then
-	help
+    help
 fi
 
 SIZE_W="$(awk -F'x' '{print $1}' <<< "${SIZE,,}" | xargs)"
@@ -64,7 +64,7 @@ find "${TARGET}" -type f | while read -r fname; do
     if [ -n "${SIZE_W}" ] && [ "${img_res_w}" -gt "${SIZE_W}" ]; then
         img_res="${SIZE_W}x"
     fi
-    if [ -n "${SIZE_H}" ] && [ "${img_res_h}" -gt "${SIZE_H}" ]; then
+    if [ -n "${SIZE_H}" ] && [ -z "${img_res}" ] && [ "${img_res_h}" -gt "${SIZE_H}" ]; then
         img_res="x${SIZE_H}"
     fi
 

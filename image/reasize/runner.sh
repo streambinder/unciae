@@ -3,6 +3,8 @@
 # auxiliary functions
 
 function help() { echo -e "Usage:\n\t$(basename $0) <MAX_WIDTHxMAX_HEIGHT> [-t <path>]"; exit 0; }
+function rprint() { echo -en "\r\e[0K$@"; }
+function pprint() { echo -e "\r\e[0K$@"; }
 
 # shell setup
 
@@ -46,6 +48,9 @@ fi
 
 find "${TARGET}" -type f -exec file {} \; | grep -o -P '^.+: \w+ image' | awk -F':' '{print $1}' | while read -r fname; do
 
+    pname="$(sed "s|${TARGET}/||g" <<< "${fname}")"
+    rprint "Checking ${pname}"
+
     # get image data
     img_data="$(exiftool "${fname}")"
     if [ "$?" -ne 0 ]; then
@@ -70,8 +75,10 @@ find "${TARGET}" -type f -exec file {} \; | grep -o -P '^.+: \w+ image' | awk -F
 
     # process resize
     if [ -n "${img_res}" ]; then
-        echo "Resizing ${fname} to ${img_res} from ${img_res_w}x${img_res_h} ($(du -sh "${fname}" | awk '{print $1}'))"
+        pprint "Resizing ${pname} to ${img_res} from ${img_res_w}x${img_res_h} ($(du -sh "${fname}" | awk '{print $1}'))"
         mogrify -resize "${img_res}" "${fname}"
     fi
 
 done
+
+pprint "Done."

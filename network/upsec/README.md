@@ -1,4 +1,4 @@
-# IsPsec
+# UPsec
 
 This tool aims to give a quick status overview of IPsec tunnels: it checks the reachability of a tunnel representative IP and eventually, if unreachable, it tries to restore the whole tunnel.
 

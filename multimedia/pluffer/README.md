@@ -10,3 +10,12 @@ SPOTIFY_ID=YJ5U6TSB317572L40EMQQPVEI2HICXFL \
     SPOTIFY_KEY=4SW2W3ICZ3DPY6NWC88UFJDBCZJAQA8J \
     go run ./pluffer/runner.go spotify:playlist:$PLAYLIST_ID
 ```
+
+Or, in the GOish way:
+
+```bash
+go get github.com/streambinder/nickels/multimedia/pluffer
+SPOTIFY_ID=YJ5U6TSB317572L40EMQQPVEI2HICXFL \
+    SPOTIFY_KEY=4SW2W3ICZ3DPY6NWC88UFJDBCZJAQA8J \
+    pluffer spotify:playlist:$PLAYLIST_ID
+```

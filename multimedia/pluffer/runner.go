@@ -36,9 +36,17 @@ func main() {
 			continue
 		}
 
-		for _, order := range randomOrders(p) {
-			if _, err := client.ReorderPlaylistTracks(spotitube.PlaylistID(playlistURI), order); err != nil {
+		ctr := 0
+		for true {
+			if _, err := client.ReorderPlaylistTracks(spotitube.PlaylistID(playlistURI), spotify.PlaylistReorderOptions{
+				RangeStart:   0,
+				InsertBefore: randomInt(2, len(p.Tracks.Tracks)),
+			}); err != nil {
 				log.Printf("Playlist %s: %s\n", p.Name, err.Error())
+			}
+
+			if ctr++; ctr == len(p.Tracks.Tracks) {
+				break
 			}
 		}
 
@@ -46,34 +54,7 @@ func main() {
 	}
 }
 
-func randomOrders(playlist *spotitube.Playlist) []spotify.PlaylistReorderOptions {
-	var options = []spotify.PlaylistReorderOptions{}
-
-	for index, position := range randomRange(len(playlist.Tracks.Tracks)) {
-		options = append(options, spotify.PlaylistReorderOptions{
-			RangeStart:   index,
-			InsertBefore: position,
-		})
-	}
-
-	return options
-}
-
-func randomRange(size int) []int {
-	var (
-		ctr = 0
-		arr = []int{}
-	)
-	for true {
-		if ctr == size {
-			break
-		}
-		arr = append(arr, ctr)
-		ctr++
-	}
-
+func randomInt(lowerbownd, upperbound int) int {
 	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(arr), func(i, j int) { arr[i], arr[j] = arr[j], arr[i] })
-
-	return arr
+	return rand.Intn(upperbound-lowerbownd+1) + lowerbownd
 }

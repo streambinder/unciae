@@ -11,6 +11,11 @@ tasks:
     retention: 2y5m7d3h
     prespawn: hooks/acl_pre.sh
     postspawn: hooks/acl_post.sh
+  - repository: /var/restic/firewall
+    password: "7sdhKdS7S01osdtL"
+    path: /etc/sysconfig/iptables
+    retention: 2m
+    prespawn: hooks/fw_pre.sh
   - repository: /var/restic/log
     password: "gjUMKMDcVHwN9Jah"
     path: /var/log

@@ -81,7 +81,7 @@ class Restup:
             pipe_auth = subprocess.Popen(['echo', '{}'.format(
                 task['password'])], stdout=subprocess.PIPE)
             pipe_restic = subprocess.Popen(
-                ['restic', '-r', task['repository'], 'forget', '--keep-within', task['retention']], stdin=pipe_auth.stdout, stdout=subprocess.PIPE)
+                ['restic', '-r', task['repository'], 'forget', '--prune', '--keep-within', task['retention']], stdin=pipe_auth.stdout, stdout=subprocess.PIPE)
             pipe_auth.stdout.close()
             pipe_out, pipe_err = pipe_restic.communicate()
             if pipe_err is not None:

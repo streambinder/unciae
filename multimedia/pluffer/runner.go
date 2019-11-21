@@ -38,7 +38,7 @@ func main() {
 
 		ctr := 0
 		for true {
-			if _, err := client.ReorderPlaylistTracks(spotitube.PlaylistID(playlistURI), spotify.PlaylistReorderOptions{
+			if _, err := client.ReorderPlaylistTracks(spotitube.ID(playlistURI), spotify.PlaylistReorderOptions{
 				RangeStart:   0,
 				InsertBefore: randomInt(2, len(p.Tracks.Tracks)),
 			}); err != nil {

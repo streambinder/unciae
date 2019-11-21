@@ -4,6 +4,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	spotitube "github.com/streambinder/spotitube/src/spotify"
@@ -24,10 +25,12 @@ func main() {
 	spotifyUser, spotifyUserID := client.User()
 	log.Printf("Authenticated as %s (%s)", spotifyUser, spotifyUserID)
 
-	for playlistID, playlistURI := range os.Args[1:] {
+	for playlistCtr, playlistURI := range os.Args[1:] {
+		playlistID := strings.Split(playlistURI, ":")[len(strings.Split(playlistURI, ":"))-1]
+
 		p, err := client.Playlist(playlistURI)
 		if err != nil {
-			log.Printf("Playlist %d: %s\n", playlistID+1, err.Error())
+			log.Printf("Playlist %d: %s\n", playlistCtr+1, err.Error())
 			continue
 		}
 
@@ -38,7 +41,7 @@ func main() {
 
 		ctr := 0
 		for true {
-			if _, err := client.ReorderPlaylistTracks(spotitube.ID(playlistURI), spotify.PlaylistReorderOptions{
+			if _, err := client.ReorderPlaylistTracks(spotitube.ID(playlistID), spotify.PlaylistReorderOptions{
 				RangeStart:   0,
 				InsertBefore: randomInt(2, len(p.Tracks.Tracks)),
 			}); err != nil {

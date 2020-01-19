@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	spotitube "github.com/streambinder/spotitube/src/spotify"
 	spotify "github.com/zmb3/spotify"
+	spotitube "github.com/streambinder/spotitube/spotify"
 )
 
 func main() {

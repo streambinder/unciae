@@ -34,7 +34,7 @@ done
 
 # arguments validation
 
-if [ -z ${TARGET} ]; then
+if [ -z "${TARGET}" ]; then
     help
 fi
 

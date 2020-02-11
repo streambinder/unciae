@@ -60,12 +60,23 @@ function on_stop {
         exit 1
     fi
 
+    rprint "Collecting waveform data..."
+    waveform="$(ffprobe -f lavfi -i amovie="${TARGET}",astats=metadata=1:reset=1 \
+            -show_entries frame=pkt_pts_time:frame_tags=lavfi.astats.Overall.RMS_level,lavfi.astats.1.RMS_level,lavfi.astats.2.RMS_level \
+            -of csv=p=0 2>/dev/null \
+        | egrep "^($(seq $((date_stop - date_start)) | xargs | sed 's/\s/|/g'))\.")"
+    
+    rprint "Trimming duration coordinates..."
+    trim_start="$(grep -v '\-inf' <<< "${waveform}" \
+        | head -1 | awk -F'.' '{print $1}')"
+    trim_stop="$(grep -v '\-inf' <<< "${waveform}" \
+        | tail -1 | awk -F'.' '{print $1}')"
+
     rprint "Trimming output file..."
-    duration="$(format_duration "$((date_stop - date_start))")"
-    ffmpeg -i "${TARGET}" -ss 00:00:00 -to "${duration}" -c copy ."${TARGET}" > /dev/null 2>&1 && \
+    ffmpeg -i "${TARGET}" -ss "$(format_duration "${trim_start}")" -to "$(format_duration "${trim_stop}")" -c copy ."${TARGET}" > /dev/null 2>&1 && \
         mv -f ."${TARGET}" "${TARGET}"
 
-    pprint "Recorded at ${TARGET} (${duration})."
+    pprint "Recorded at ${TARGET} ($(format_duration $((trim_stop - trim_start))))."
 }
 
 rprint "Generating quack card..."

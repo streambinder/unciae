@@ -7,9 +7,13 @@ import (
 	"strings"
 	"time"
 
-	spotify "github.com/zmb3/spotify"
 	spotitube "github.com/streambinder/spotitube/spotify"
+	spotify "github.com/zmb3/spotify"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 func main() {
 	if len(os.Args) == 1 {
@@ -39,17 +43,21 @@ func main() {
 			continue
 		}
 
-		ctr := 0
-		for true {
-			if _, err := client.ReorderPlaylistTracks(spotitube.ID(playlistID), spotify.PlaylistReorderOptions{
-				RangeStart:   0,
-				InsertBefore: randomInt(2, len(p.Tracks.Tracks)),
-			}); err != nil {
+		var (
+			reorderedSlice  dicesSlice(p.Tracks.Total, true)
+			carbonCopySlice = indicesSlice(p.Tracks.Total, false)
+		)
+		for dstIndex, srcValue := range reorderedSlice {
+			srcIndex := valueIndex(carbonCopySlice, srcValue)
+			if _, err := client.ReorderPlaylistTracks(
+				spotitube.ID(playlistID),
+				spotify.PlaylistReorderOptions{
+					RangeStart:   srcIndex,
+					InsertBefore: dstIndex + 1,
+				}); err != nil {
 				log.Printf("Playlist %s: %s\n", p.Name, err.Error())
-			}
-
-			if ctr++; ctr == len(p.Tracks.Tracks) {
-				break
+			} else {
+				carbonCopySlice = reorderSliceItem(carbonCopySlice, srcIndex, dstIndex)
 			}
 		}
 
@@ -57,7 +65,49 @@ func main() {
 	}
 }
 
-func randomInt(lowerbownd, upperbound int) int {
-	rand.Seed(time.Now().UnixNano())
-	return rand.Intn(upperbound-lowerbownd+1) + lowerbownd
+func valueIndex(slice []int, value int) int {
+	for index, val := range slice {
+		if val == value {
+			return index
+		}
+	}
+	return -1
+}
+
+func reorderSliceItem(slice []int, src, dst int) (ordered []int) {
+	if src == dst {
+		return slice
+	}
+
+	for index := range slice {
+		switch index {
+		case src:
+			continue
+		case dst:
+			if src < dst {
+				ordered = append(ordered, slice[index])
+				ordered = append(ordered, slice[src])
+			} else {
+				ordered = append(ordered, slice[src])
+				ordered = append(ordered, slice[index])
+			}
+		default:
+			if index < len(slice) {
+				ordered = append(ordered, slice[index])
+			}
+		}
+	}
+	return
+}
+
+func indicesSlice(length int, random bool) (slice []int) {
+	for i := 0; i < length; i++ {
+		slice = append(slice, i)
+	}
+	if random {
+		rand.Shuffle(len(slice), func(i, j int) {
+			slice[i], slice[j] = slice[j], slice[i]
+		})
+	}
+	return
 }

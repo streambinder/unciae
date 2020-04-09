@@ -44,7 +44,7 @@ func main() {
 		}
 
 		var (
-			reorderedSlice  dicesSlice(p.Tracks.Total, true)
+			reorderedSlice = indicesSlice(p.Tracks.Total, true)
 			carbonCopySlice = indicesSlice(p.Tracks.Total, false)
 		)
 		for dstIndex, srcValue := range reorderedSlice {

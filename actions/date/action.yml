@@ -1,0 +1,15 @@
+name: Get Date
+description: Get date/time
+runs:
+  using: docker
+  image: Dockerfile
+intputs:
+  format:
+    description: Date/time format
+    required: false
+    default: '%F'
+outputs:
+  datetime:
+    description: Date/time string
+branding:
+  icon: clock

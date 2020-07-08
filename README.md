@@ -1,5 +1,3 @@
-# Nickels
+# Nickels <img align="left" src="https://davidepucci.it/favicon/favicon-96x96.png">
 
-This repository is the safe place where to keep scripts, utilities and snippets, written both for work and personal purposes, that solved (and eventually keep doing that) daily problems and/or handle common systems operations for me.
-
-You know, all those things on which you spent too much time to be simply trashed and that, in the same time, don't deserve their own repository.
+This is the safe place to put every mini-project worth to be kept whilst not deserving its own repository.

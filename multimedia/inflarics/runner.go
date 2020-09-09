@@ -76,8 +76,6 @@ func id3Persist(filename, lyrics string) error {
 	if err != nil {
 		return err
 	}
-	defer tag.Close()
-	defer tag.Save()
 
 	tag.AddUnsynchronisedLyricsFrame(id3v2.UnsynchronisedLyricsFrame{
 		Encoding:          id3v2.EncodingUTF8,
@@ -85,6 +83,9 @@ func id3Persist(filename, lyrics string) error {
 		ContentDescriptor: tag.Artist(),
 		Lyrics:            lyrics,
 	})
+
+	defer tag.Save()
+	defer tag.Close()
 
 	return nil
 }

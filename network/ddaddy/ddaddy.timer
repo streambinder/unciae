@@ -1,0 +1,10 @@
+[Unit]
+Description=Go Daddy dynamic-DNS record flusher timer
+
+[Timer]
+Unit=ddaddy.service
+OnCalendar=*:0/5
+Persistent=true
+
+[Install]
+WantedBy=timers.target

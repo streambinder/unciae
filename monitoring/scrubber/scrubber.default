@@ -1,0 +1,5 @@
+CONTACT=user@domain.tld
+DEVICES="/dev/sda /or/mount/point"
+SMTP_URI=smtps://smtp.gmail.com:465
+SMTP_USER=username
+SMTP_PASS=password

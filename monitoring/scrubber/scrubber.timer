@@ -3,7 +3,7 @@ Description=BTRFS scrub timer
 
 [Timer]
 Unit=scrubber.service
-OnCalendar=daily
+OnCalendar=weekly
 Persistent=true
 
 [Install]

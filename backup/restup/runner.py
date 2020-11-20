@@ -48,6 +48,7 @@ class Restup:
     def __process(self, task):
         if 'prespawn' in task:
             try:
+                print('Running pre-hook {}...'.format(task['prespawn']))
                 subprocess.run(task['prespawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
                 print(
@@ -69,15 +70,18 @@ class Restup:
             print('Unable to backup {} repository: {}'.format(
                 task['respository'], str(pipe_err)), file=sys.stderr)
             return
+        print(pipe_out)
 
         if 'postspawn' in task:
             try:
+                print('Running post-hook {}...'.format(task['postspawn']))
                 subprocess.run(task['postspawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
                 print(
                     'Post-task for {} exited abnormally'.format(task['repository']), file=sys.stderr)
 
         if 'retention' in task:
+            print('Enforcing {} retention...'.format(task['retention']))
             pipe_auth = subprocess.Popen(['echo', '{}'.format(
                 task['password'])], stdout=subprocess.PIPE)
             pipe_restic = subprocess.Popen(
@@ -87,8 +91,10 @@ class Restup:
             if pipe_err is not None:
                 print('Unable to apply retention on {} repository: {}'.format(
                     task['respository'], str(pipe_err)), file=sys.stderr)
+                return
+            print(pipe_out)
 
-        print('Repository {} is up-to-date'.format(task['repository']))
+        print('Repository {} updated'.format(task['repository']))
 
     def run(self):
         for t in self.tasks:

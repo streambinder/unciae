@@ -13,6 +13,7 @@ class Restup:
     def __init__(self, cfg):
         self.tasks = []
         self.__threads = []
+        self.__mutex = threading.Lock()
         self.__parse_config(cfg)
         self.__validate_config()
 
@@ -45,17 +46,26 @@ class Restup:
         for thread in self.__threads:
             thread.join()
 
+    def __t_print(self, payload):
+        try:
+            self.__mutex.acquire()
+            if isinstance(payload, (bytes, bytearray)):
+                payload = payload.decode('utf-8')
+            print(payload)
+        finally:
+            self.__mutex.release()
+
     def __process(self, task):
         if 'prespawn' in task:
             try:
-                print('Running pre-hook {}...'.format(task['prespawn']))
+                self.__t_print('Running pre-hook {}...'.format(task['prespawn']))
                 subprocess.run(task['prespawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
-                print(
+                self.__t_print(
                     'Pre-task for {} exited abnormally. Breaking up backup.'.format(task['repository']), file=sys.stderr)
                 return
 
-        print('Spawning {} directory restic backup'.format(task['path']))
+        self.__t_print('Spawning {} directory restic backup'.format(task['path']))
         regexes = []
         if 'regexes' in task:
             for regex in task['regexes']:
@@ -67,21 +77,21 @@ class Restup:
         pipe_auth.stdout.close()
         pipe_out, pipe_err = pipe_restic.communicate()
         if pipe_err is not None:
-            print('Unable to backup {} repository: {}'.format(
+            self.__t_print('Unable to backup {} repository: {}'.format(
                 task['respository'], str(pipe_err)), file=sys.stderr)
             return
-        print(pipe_out)
+        self.__t_print(pipe_out)
 
         if 'postspawn' in task:
             try:
-                print('Running post-hook {}...'.format(task['postspawn']))
+                self.__t_print('Running post-hook {}...'.format(task['postspawn']))
                 subprocess.run(task['postspawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
-                print(
+                self.__t_print(
                     'Post-task for {} exited abnormally'.format(task['repository']), file=sys.stderr)
 
         if 'retention' in task:
-            print('Enforcing {} retention...'.format(task['retention']))
+            self.__t_print('Enforcing {} retention...'.format(task['retention']))
             pipe_auth = subprocess.Popen(['echo', '{}'.format(
                 task['password'])], stdout=subprocess.PIPE)
             pipe_restic = subprocess.Popen(
@@ -89,12 +99,12 @@ class Restup:
             pipe_auth.stdout.close()
             pipe_out, pipe_err = pipe_restic.communicate()
             if pipe_err is not None:
-                print('Unable to apply retention on {} repository: {}'.format(
+                self.__t_print('Unable to apply retention on {} repository: {}'.format(
                     task['respository'], str(pipe_err)), file=sys.stderr)
                 return
-            print(pipe_out)
+            self.__t_print(pipe_out)
 
-        print('Repository {} updated'.format(task['repository']))
+        self.__t_print('Repository {} updated'.format(task['repository']))
 
     def run(self):
         for t in self.tasks:

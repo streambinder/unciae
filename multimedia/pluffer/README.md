@@ -13,8 +13,9 @@ export SPOTIFY_KEY=4SW2W3ICZ3DPY6NWC88UFJDBCZJAQA8J
 ```
 
 Then, run the tool by path:
+
 ```bash
-go run ./pluffer/runner.go \ 
+go run ./pluffer/runner.go \
     spotify:playlist:$PL1 spotify:playlist:$PL2
 ```
 

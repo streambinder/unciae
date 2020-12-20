@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-    echo -e "Usage:\n\t$(basename $0) [-t seconds] <record>"
+    echo -e "Usage:\n\t$(basename "$0") [-t seconds] <record>"
     exit 0
 }
 
@@ -66,7 +66,7 @@ if curl -f -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN}/records/A/${R
     -H "Accept: application/json" \
     -H "Content-Type: application/json" \
     -H "Authorization: sso-key ${API_KEY}:${API_SECRET}" \
-    --data '[{"data":"'${public_ip}'","name":"'${RECORD}'","ttl":3600,"type":"A"}]'; then
+    --data '[{"data":"'"${public_ip}"'","name":"'"${RECORD}"'","ttl":3600,"type":"A"}]'; then
     echo "Record A for ${RECORD} succesfully updated to ${public_ip}"
 else
     echo "Unable to update record A for ${RECORD} to ${public_ip}"

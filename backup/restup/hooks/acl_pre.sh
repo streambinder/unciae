@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090
 source "$(realpath "$(dirname "$0")")/acl_common.sh"
 
 mkdir -p "${DIR_ACL}"

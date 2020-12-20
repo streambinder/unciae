@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-    echo -e "Usage:\n\t$(basename $0) <device> [devices...] -c <contact>"
+    echo -e "Usage:\n\t$(basename "$0") <device> [devices...] -c <contact>"
     exit 0
 }
 

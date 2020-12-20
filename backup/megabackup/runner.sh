@@ -112,7 +112,7 @@ while read -r volume_path; do
 			empty_volumes="${empty_volumes} ${top_empty_volume_path}"
 		fi
 	fi
-done <<<"$(megals -R "${BACKUP_MEGADIR}" | grep -E /[0-9]+$)"
+done <<<"$(megals -R "${BACKUP_MEGADIR}" | grep -E '/[0-9]+$')"
 if [ "$((${#recycle_volumes} + ${#empty_volumes}))" -gt "$((${#BACKUP_MEGADIR} + 1))" ]; then
 	echo "Starting effecting volumes recycling..."
 	megarm "${recycle_volumes} ${empty_volumes}"

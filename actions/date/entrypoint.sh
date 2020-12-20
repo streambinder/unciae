@@ -1,2 +1,2 @@
 #!/bin/bash
-echo "::set-output name=datetime::$(date +${FORMAT:-%F})"
+echo "::set-output name=datetime::$(date +"${FORMAT:-%F}")"

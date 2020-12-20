@@ -44,6 +44,7 @@ tasks:
 ```
 
 The resulting commands spawned by the script would be:
+
 - `firstrepo`:
   ```bash
   echo "content" > /root/sample.txt
@@ -71,7 +72,8 @@ Also, all the tasks will be processed in dedicated threads.
 The whole script purpose was to be able to configure in a flexible and simple way different kind of backup, while keeping it simple to schedule them.
 
 I personally use it as a scheduled command as a `crontab` entry:
-```
+
+```bash
 0 2 * * * /path/to/restup/runner.py
 ```
 

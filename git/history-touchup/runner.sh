@@ -2,9 +2,12 @@
 
 # auxiliary functions
 
-function help() { echo -e "Usage:\n\t$(basename $0)"; exit 0; }
-function rprint() { echo -en "\r\e[0K$@"; }
-function pprint() { echo -e "\r\e[0K$@"; }
+function help() {
+    echo -e "Usage:\n\t$(basename "$0")"
+    exit 0
+}
+function rprint() { echo -en "\r\e[0K$*"; }
+function pprint() { echo -e "\r\e[0K$*"; }
 
 # shell setup
 
@@ -12,9 +15,9 @@ function pprint() { echo -e "\r\e[0K$@"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -h|--help)
-            help
-            ;;
+    -h | --help)
+        help
+        ;;
     esac
     shift
 done

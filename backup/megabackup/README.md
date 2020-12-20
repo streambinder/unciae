@@ -6,7 +6,7 @@ It backups common things such as databases (check `Databases dumper user setup` 
 
 The directory structure, inside the folder chosen as MEGA target directory, will be something like this:
 
-```
+```text
 |- 2018
    |- 12
       |- 31
@@ -57,6 +57,7 @@ Password = p4ssw0rd
 ```
 
 In the first lines of the script you've the ability to tune few parameters, such as:
+
 1. `CONTACT_EMAIL`: if you want a backup report via email
 2. `BACKUP_VHOSTS`: to select which virtual hosts to backup
 3. `BACKUP_EXT_FOLDERS`: to backup any other additional path

@@ -46,7 +46,7 @@ class Restup:
         for thread in self.__threads:
             thread.join()
 
-    def __t_print(self, payload):
+    def __t_print(self, payload, file=sys.stdout):
         try:
             self.__mutex.acquire()
             if isinstance(payload, (bytes, bytearray)):
@@ -58,14 +58,16 @@ class Restup:
     def __process(self, task):
         if 'prespawn' in task:
             try:
-                self.__t_print('Running pre-hook {}...'.format(task['prespawn']))
+                self.__t_print(
+                    'Running pre-hook {}...'.format(task['prespawn']))
                 subprocess.run(task['prespawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
                 self.__t_print(
                     'Pre-task for {} exited abnormally. Breaking up backup.'.format(task['repository']), file=sys.stderr)
                 return
 
-        self.__t_print('Spawning {} directory restic backup'.format(task['path']))
+        self.__t_print(
+            'Spawning {} directory restic backup'.format(task['path']))
         regexes = []
         if 'regexes' in task:
             for regex in task['regexes']:
@@ -84,14 +86,16 @@ class Restup:
 
         if 'postspawn' in task:
             try:
-                self.__t_print('Running post-hook {}...'.format(task['postspawn']))
+                self.__t_print(
+                    'Running post-hook {}...'.format(task['postspawn']))
                 subprocess.run(task['postspawn'], shell=True, check=True)
             except subprocess.CalledProcessError:
                 self.__t_print(
                     'Post-task for {} exited abnormally'.format(task['repository']), file=sys.stderr)
 
         if 'retention' in task:
-            self.__t_print('Enforcing {} retention...'.format(task['retention']))
+            self.__t_print(
+                'Enforcing {} retention...'.format(task['retention']))
             pipe_auth = subprocess.Popen(['echo', '{}'.format(
                 task['password'])], stdout=subprocess.PIPE)
             pipe_restic = subprocess.Popen(

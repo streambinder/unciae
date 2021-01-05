@@ -17,3 +17,5 @@ jobs:
 
       - name: Lint codebase
         uses: docker://github/super-linter:latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_ACTIONS_UNCIAE }}

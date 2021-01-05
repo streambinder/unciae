@@ -24,7 +24,7 @@ while salt_verify != salt:
 		sys.exit(1)
 	salt_verify = getpass.getpass('Retype salt (verification): ')
 
-if re.match('^([a-z0-9]+\.)+[a-z]+$', payload) is None:
+if re.match('^([a-z0-9\-]+\.)+[a-z]+$', payload) is None:
 	print('Invalid payload {}'.format(payload))
 	sys.exit(1)
 

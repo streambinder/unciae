@@ -28,8 +28,7 @@ class Restup:
             for mandatory_token in ["repository", "password", "path"]:
                 if mandatory_token not in t or t[mandatory_token] is None:
                     raise Exception(
-                        "{} key is mandatory for a task object".format(
-                            mandatory_token)
+                        "{} key is mandatory for a task object".format(mandatory_token)
                     )
             for recommended_token in ["retention"]:
                 if recommended_token not in t or t[recommended_token] is None:

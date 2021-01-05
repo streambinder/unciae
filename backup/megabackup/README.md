@@ -2,7 +2,8 @@
 
 This is a very simple backup system based on `tar.xz` compression, with automatic files retention and that's using MEGA as backup destination.
 
-It backups common things such as databases (check `Databases dumper user setup` section), Apache virtual hosts, mail directories, filesystem ACLs and eventual arbitrary additional folders. Keep in mind, it has been written for a ISPConfig-configured webserver and it assumes several directory locations by defaults (such as `/var/www/vhost` symlink for virtual hosts, or `/var/vmail` for mail directories, and so on).
+It backups common things such as databases (check `Databases dumper user setup` section), Apache virtual hosts, mail directories, filesystem ACLs and eventual arbitrary additional folders.
+Keep in mind, it has been written for a ISPConfig-configured webserver and it assumes several directory locations by defaults (such as `/var/www/vhost` symlink for virtual hosts, or `/var/vmail` for mail directories, and so on).
 
 The directory structure, inside the folder chosen as MEGA target directory, will be something like this:
 

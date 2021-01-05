@@ -2,7 +2,9 @@
 
 This utility has been thought to act as a sort of stateless keychain which you ask your password to, giving it to you back without actually knowing it.
 
-This is my answer to the need of keep in mind just one password for every service I'm subcribed to without effectively use that one. The mechanism behind this script is self-explained by the concept of the _salted password_: in very poor words, it needs two arguments to generate a single password. The first one is the payload, a discriminator that defines the service you're asking the password for and that's easy to remember/discover if needed, and the latter is the only password you need to remember, the key for the whole keychain, as it's the salt that's used to mix the discriminator payload.
+This is my answer to the need of keep in mind just one password for every service I'm subcribed to without effectively use that one.
+The mechanism behind this script is self-explained by the concept of the _salted password_: in very poor words, it needs two arguments to generate a single password.
+The first one is the payload, a discriminator that defines the service you're asking the password for and that's easy to remember/discover if needed, and the latter is the only password you need to remember, the key for the whole keychain, as it's the salt that's used to mix the discriminator payload.
 
 That said, the resulting (mixed) payload gets hashed, cut and altered to increase password strength (with operations such as adding symbols as the hashtag, making the first letter uppercase, and so on).
 

@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-    echo -e "Usage:\n\t$(basename "$0") -k <path/to/key> -d <path/to/db> <name> [-c]"
+    echo -e "Usage:\n\t$(basename "$0") -k <path/to/key> -d <path/to/db> <name> [-l|-s]"
     exit 0
 }
 function rprint() { echo -en "\r\e[0K$*"; }
@@ -26,8 +26,11 @@ while [[ $# -gt 0 ]]; do
         DB="$2"
         shift
         ;;
-    -c | --clip)
-        CLIP=1
+    -l | --lookup)
+        LOOKUP=1
+        ;;
+    -s | --show)
+        SHOW=1
         ;;
     *)
         NAME=$1
@@ -52,8 +55,10 @@ fi
 
 # effective script
 
-if [ -n "${CLIP}" ]; then
-    keepassxc-cli clip -k "${KEY}" "${DB}" "$NAME"
-else
+if [ -n "${LOOKUP}" ]; then
+    keepassxc-cli locate -k "${KEY}" "${DB}" "$NAME"
+elif [ -n "${SHOW}" ]; then
     keepassxc-cli show -s -k "${KEY}" "${DB}" "$NAME"
+else
+    keepassxc-cli clip -k "${KEY}" "${DB}" "$NAME"
 fi

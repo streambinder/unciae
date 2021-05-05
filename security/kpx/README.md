@@ -1,8 +1,10 @@
 # KPX
 
-This is a simple wrapper of `keepassxc-cli`.
+This is a simple wrapper of `keepassxc-cli clip|show|locate`.
 
 ## How to use
+
+In order to copy to clipboard:
 
 ```bash
 kpx -k path/to/key -d path/to/db name
@@ -15,4 +17,4 @@ export KPX_DB=path/to/db
 kpx name
 ```
 
-It supports `-c` flag to copy password to clipboard temporarily.
+It supports `-s` flag to show the whole key entry and `-l` to lookup the database for entries.

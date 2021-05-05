@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# shellcheck disable=SC1090
+# shellcheck disable=SC1090,SC1091
 source "$(realpath "$(dirname "$0")")/db_common.sh"
 
 mkdir -p "${DIR_DB}"

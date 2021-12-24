@@ -21,5 +21,5 @@ Password (standard, v1) is: #869Cba47f4d7524
 ```
 
 It eventually offers two options:
-1. `-s`/`--short` flag: many websites impose a max length to the password. This flag make the resulting password shorter.
-2. `-v`/`--version <int>` flag: many websites impose to periodically update passwords without the opportunity to re-use old passwords. This flag can be used to increase version of the password, without altering either the discriminator payload or the salt.
+1. `-s`/`--short` flag: many sites impose a max length to the password. This flag make the resulting password shorter.
+2. `-v`/`--version <int>` flag: many sites impose to periodically update passwords without the opportunity to re-use old passwords. This flag can be used to increase version of the password, without altering either the discriminator payload or the salt.

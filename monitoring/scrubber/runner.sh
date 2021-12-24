@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     *)
-        DISKS="${DISKS} $1"
+        DEVICES="${DEVICES} $1"
         ;;
     esac
     shift
@@ -31,7 +31,7 @@ done
 
 # arguments validation
 
-if [ -z "${DISKS}" ]; then
+if [ -z "${DEVICES}" ]; then
     echo "At least one disk path must be given"
     help
 fi
@@ -45,7 +45,7 @@ CONTACT_DOMAIN="$(awk -F'@' '{print $2}' <<<"${CONTACT}")"
 # effective script
 
 disk_scrub_log="/tmp/scrub-$$.log"
-for disk in ${DISKS}; do
+for disk in ${DEVICES}; do
     cat <<EOF >${disk_scrub_log}
 From: "Scrubber" <scrubber@${CONTACT_DOMAIN}>
 To: <${CONTACT}>

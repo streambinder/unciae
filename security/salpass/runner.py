@@ -9,9 +9,13 @@ import sys
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--short", help="Short version", action="store_true")
 parser.add_argument("-v", "--version", help="Password version", type=int, default=1)
+parser.add_argument("payload", nargs="?")
 args = parser.parse_args()
 
-payload = input("Payload: ").strip().lower()
+if not args.payload:
+    parser.print_help()
+    sys.exit(1)
+
 salt = getpass.getpass("Salt: ")
 salt_verify = ""
 salt_verify_attempts = 0
@@ -23,11 +27,11 @@ while salt_verify != salt:
         sys.exit(1)
     salt_verify = getpass.getpass("Retype salt (verification): ")
 
-if re.match("^([a-z0-9-]+.)+[a-z]+$", payload) is None:
-    print("Invalid payload {}".format(payload))
+if re.match("^([a-z0-9-]+.)+[a-z]+$", args.payload) is None:
+    print("Invalid payload {}".format(args.payload))
     sys.exit(1)
 
-password_plain = "{}@{}{}".format(payload, salt, str("+") * (args.version - 1))
+password_plain = "{}@{}{}".format(args.payload, salt, str("+") * (args.version - 1))
 password_hash = hashlib.sha256(password_plain.encode("utf-8")).hexdigest()
 password_nocase = password_hash[0:15] if not args.short else password_hash[0:7]
 password_uncased = True

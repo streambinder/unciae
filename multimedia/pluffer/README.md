@@ -8,8 +8,8 @@ First of all export `SPOTIFY_ID` and `SPOTIFY_KEY` environment keys:
 
 ```bash
 # the following SPOTIFY_ID and SPOTIFY_KEY are bogus
-export SPOTIFY_ID=YJ5U6TSB317572L40EMQQPVEI2HICXFL
-export SPOTIFY_KEY=4SW2W3ICZ3DPY6NWC88UFJDBCZJAQA8J
+export SPOTIFY_ID=REDACTED
+export SPOTIFY_KEY=REDACTED
 ```
 
 Then, run the tool by path:

@@ -8,7 +8,7 @@ This project wraps up the source code used to run Radio Frequency (RF) communica
 ## How to use
 
 Connect the Arduino boards via USB.
-Open up `ask_tx/ask_transmitter.ino` and `ask_rx/ask_receiver.ino` as separated projects on Arduino IDE and load them to each specific board.
+Open up `ask_transmitter.ino` and `ask_receiver.ino` as separated projects on Arduino IDE and load them to each specific board.
 Follow the flow by connecting to the USB/Serial ports (`ttyUSB` ports mapping could very likely be different):
 ```bash
 # transmitter

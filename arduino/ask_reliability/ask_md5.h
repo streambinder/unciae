@@ -1,5 +1,7 @@
-#ifndef MD5_h
-#define MD5_h
+// Copyright 2020 Davide Pucci
+
+#ifndef ARDUINO_ASK_RELIABILITY_ASK_MD5_H_
+#define ARDUINO_ASK_RELIABILITY_ASK_MD5_H_
 
 #include "Arduino.h"
 
@@ -27,7 +29,7 @@
 
 #include <string.h>
 
-typedef unsigned long MD5_u32plus;
+typedef uint32_t MD5_u32plus;
 
 typedef struct {
   MD5_u32plus lo, hi;
@@ -48,4 +50,4 @@ public:
   static void MD5Update(void *ctxBuf, const void *data, size_t size);
 };
 
-#endif
+#endif // ARDUINO_ASK_RELIABILITY_ASK_MD5_H_

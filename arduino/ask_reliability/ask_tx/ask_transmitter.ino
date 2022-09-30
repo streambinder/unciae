@@ -1,1 +1,0 @@
-../ask_sketch/ask_transmitter.ino

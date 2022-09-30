@@ -1,11 +1,13 @@
-#ifndef ASK_LAB_H
-#define ASK_LAB_H
+// Copyright 2020 Davide Pucci
+
+#ifndef ARDUINO_ASK_RELIABILITY_ASK_LAB_H_
+#define ARDUINO_ASK_RELIABILITY_ASK_LAB_H_
 
 #define ASK_LAB_ID "ask_lab"
 #define ASK_LAB_KEY "supersecret"
 #define ASK_LAB_FIN_MSG "fin"
 #define ASK_LAB_HASHLEN 32
-#define ASK_LAB_WAIT_SYN 5 // seconds
+#define ASK_LAB_WAIT_SYN 5  // seconds
 #define ASK_LAB_WAIT_FIN 10 // seconds
 #define ASK_LAB_EXP 100
 
@@ -16,4 +18,4 @@ void lab_payload_chop_hash(char *hash, const char *payload);
 void lab_payload_chop_msg(char *msg, const char *payload,
                           const uint8_t payload_len);
 
-#endif /* ASK_LAB_H */
+#endif // ARDUINO_ASK_RELIABILITY_ASK_LAB_H_

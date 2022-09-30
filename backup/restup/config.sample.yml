@@ -1,23 +1,23 @@
 tasks:
   - repository: /var/restic/database
-    password: "2dkNKCVT9AgFaV8g"
+    password: "REDACTED"
     path: /var/databases
     retention: 31d
     prespawn: hooks/db_pre.sh
     postspawn: hooks/db_post.sh
   - repository: /var/restic/acl
-    password: "bEQokh6iQm9rwmfz"
+    password: "REDACTED"
     path: /var/acls
     retention: 2y5m7d3h
     prespawn: hooks/acl_pre.sh
     postspawn: hooks/acl_post.sh
   - repository: /var/restic/firewall
-    password: "7sdhKdS7S01osdtL"
+    password: "REDACTED"
     path: /etc/sysconfig/iptables
     retention: 2m
     prespawn: hooks/fw_pre.sh
   - repository: /var/restic/log
-    password: "gjUMKMDcVHwN9Jah"
+    password: "REDACTED"
     path: /var/log
     retention: 2m15d
     regexes:

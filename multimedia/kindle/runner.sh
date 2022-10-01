@@ -17,3 +17,4 @@ exiftool -Title="${title}" \
 	-Author="${author}" \
 	"${path_tmp}"
 mv -vf "${path_tmp}" "${path}"
+ebook-convert --enable-heuristics "${path}" "${path/.pdf/.epub}"

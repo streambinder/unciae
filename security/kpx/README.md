@@ -17,4 +17,4 @@ export KPX_DB=path/to/db
 kpx name
 ```
 
-It supports `-s` flag to show the whole key entry and `-l` to lookup the database for entries.
+It supports `-u` flag to copy the username entry instead, `-s` to show the whole key entry and `-l` to lookup the database for entries.

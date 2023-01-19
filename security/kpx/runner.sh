@@ -26,6 +26,9 @@ while [[ $# -gt 0 ]]; do
         DB="$2"
         shift
         ;;
+    -u| --username)
+        USERNAME=1
+        ;;
     -l | --lookup)
         LOOKUP=1
         ;;
@@ -53,6 +56,11 @@ if [ -z "${KEY}" ] || [ -z "${DB}" ] || [ -z "${NAME}" ]; then
     help
 fi
 
+ATTR=password
+if [ -n "${USERNAME}" ]; then
+    ATTR=username
+fi
+
 # effective script
 
 if [ -n "${LOOKUP}" ]; then
@@ -60,5 +68,5 @@ if [ -n "${LOOKUP}" ]; then
 elif [ -n "${SHOW}" ]; then
     keepassxc-cli show -s -k "${KEY}" "${DB}" "$NAME"
 else
-    keepassxc-cli clip -k "${KEY}" "${DB}" "$NAME"
+    keepassxc-cli clip -a "${ATTR}" -k "${KEY}" "${DB}" "$NAME"
 fi

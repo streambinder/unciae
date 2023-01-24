@@ -64,9 +64,9 @@ fi
 # effective script
 
 if [ -n "${LOOKUP}" ]; then
-    keepassxc-cli locate -k "${KEY}" "${DB}" "$NAME"
+    keepassxc-cli search -qk "${KEY}" "${DB}" "$NAME"
 elif [ -n "${SHOW}" ]; then
-    keepassxc-cli show -s -k "${KEY}" "${DB}" "$NAME"
+    keepassxc-cli show -s -qk "${KEY}" "${DB}" "$NAME"
 else
-    keepassxc-cli clip -a "${ATTR}" -k "${KEY}" "${DB}" "$NAME"
+    keepassxc-cli clip -qa "${ATTR}" -k "${KEY}" "${DB}" "$NAME" 0
 fi

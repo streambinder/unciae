@@ -1,0 +1,33 @@
+name: push
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Lint codebase
+        uses: docker://github/super-linter:latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_ACTIONS_UNCIAE }}
+  notify:
+    needs: [lint]
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch push event
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GH_ACTIONS_UNCIAE }}
+          repository: streambinder/clavis
+          event-type: unciae-sync
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'

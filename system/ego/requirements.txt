@@ -1,3 +1,3 @@
-anyio
+git+https://github.com/agronholm/anyio # not really needed, only a matter of annoying deprecation warnings
 asyncclick
 trio

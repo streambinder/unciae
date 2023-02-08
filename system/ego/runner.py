@@ -53,6 +53,11 @@ async def brew():
     await trio.run_process(["brew", "upgrade"])
 
 
+@dep()
+async def managedsoftwareupdate():
+    await trio.run_process(["sudo", "managedsoftwareupdate", "--installonly"])
+
+
 @dep(cmd="zsh")
 async def omz():
     await trio.run_process('zsh -c "source $HOME/.zshrc && omz update"', shell=True)
@@ -81,6 +86,7 @@ async def upgrade():
         nursery.start_soon(apt)
         nursery.start_soon(brew)
         nursery.start_soon(omz)
+        nursery.start_soon(managedsoftwareupdate)
         nursery.start_soon(softwareupdate)
         nursery.start_soon(yadm)
 

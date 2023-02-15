@@ -19,11 +19,13 @@ if not args.payload:
     parser.print_help()
     sys.exit(1)
 
-if re.match("^([a-z0-9-]+.)+[a-z]+$", args.payload) is None:
+if not re.match("^([a-z0-9-]+.)+[a-z]+$", args.payload):
     print("Invalid payload {}".format(args.payload))
     sys.exit(1)
 
-salt = sys.stdin.readline().rstrip()
+salt = None
+if sys.stdin.isatty():
+    salt = sys.stdin.readline().rstrip()
 if not salt:
     salt = getpass.getpass("Salt: ")
     salt_verify = getpass.getpass("Verify: ")

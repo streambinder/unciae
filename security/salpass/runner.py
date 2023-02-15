@@ -4,6 +4,7 @@ import argparse
 import getpass
 import hashlib
 import re
+import select
 import sys
 
 parser = argparse.ArgumentParser()
@@ -24,8 +25,10 @@ if not re.match("^([a-z0-9-]+.)+[a-z]+$", args.payload):
     sys.exit(1)
 
 salt = None
-if sys.stdin.isatty():
+# check if there data fed through stdin
+if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
     salt = sys.stdin.readline().rstrip()
+
 if not salt:
     salt = getpass.getpass("Salt: ")
     salt_verify = getpass.getpass("Verify: ")

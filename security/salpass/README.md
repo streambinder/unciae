@@ -10,16 +10,24 @@ That said, the resulting (mixed) payload gets hashed, cut and altered to increas
 
 ## How to use
 
-Straightforward, just run the script:
+Fetch and install the requirements in a virtual environment (if desired):
 
 ```bash
-$ ./runner.py
-Payload: websi.te
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Then run the script:
+
+```bash
+salpass websi.te
 Salt: *****
-Retype salt (verification): *****
+Verify: *****
 Password (standard, v1) is: #869Cba47f4d7524
 ```
 
-It eventually offers two options:
+It offers two options:
 1. `-s`/`--short` flag: many sites impose a max length to the password. This flag make the resulting password shorter.
 2. `-v`/`--version <int>` flag: many sites impose to periodically update passwords without the opportunity to re-use old passwords. This flag can be used to increase version of the password, without altering either the discriminator payload or the salt.
+3. `-c`/`--clip` flag: copies password to the clipboard instead of printing it.

@@ -7,31 +7,36 @@ import re
 import sys
 
 parser = argparse.ArgumentParser()
+parser.add_argument("payload", nargs="?")
 parser.add_argument("-s", "--short", help="Short version", action="store_true")
 parser.add_argument("-v", "--version", help="Password version", type=int, default=1)
-parser.add_argument("payload", nargs="?")
+parser.add_argument(
+    "-c", "--clip", help="Copy to clipboard only", action="store_true", default=False
+)
 args = parser.parse_args()
 
 if not args.payload:
     parser.print_help()
     sys.exit(1)
 
-salt = getpass.getpass("Salt: ")
-salt_verify = ""
-salt_verify_attempts = 0
-
-while salt_verify != salt:
-    salt_verify_attempts += 1
-    if salt_verify_attempts > 3:
-        print("Too many salt verification attempts. Exiting.")
-        sys.exit(1)
-    salt_verify = getpass.getpass("Retype salt (verification): ")
-
 if re.match("^([a-z0-9-]+.)+[a-z]+$", args.payload) is None:
     print("Invalid payload {}".format(args.payload))
     sys.exit(1)
 
-password_plain = "{}@{}{}".format(args.payload, salt, str("+") * (args.version - 1))
+salt = sys.stdin.readline().rstrip()
+if not salt:
+    salt = getpass.getpass("Salt: ")
+    salt_verify = getpass.getpass("Verify: ")
+    if salt != salt_verify:
+        salt_last = getpass.getpass("Verify: ")
+        if salt_last not in [salt, salt_verify]:
+            print("Too many salt verification attempts. Exiting.")
+            sys.exit(1)
+        elif salt_last == salt_verify:
+            salt = salt_last
+
+
+password_plain = f"{args.payload}@{salt}{str('+') * (args.version - 1)}"
 password_hash = hashlib.sha256(password_plain.encode("utf-8")).hexdigest()
 password_nocase = password_hash[0:15] if not args.short else password_hash[0:7]
 password_uncased = True
@@ -43,8 +48,11 @@ for char in password_nocase:
         char = char.upper()
     password += char
 
-print(
-    "Password ({}, {}) is: {}".format(
-        "short" if args.short else "standard", "v{}".format(args.version), password
+if args.clip:
+    import pyperclip
+
+    pyperclip.copy(password)
+else:
+    print(
+        f"Password ({'short' if args.short else 'standard'}, v{args.version}) is: {password}"
     )
-)

@@ -5,7 +5,7 @@ It basically functions upons a script and a YAML-formatted configuration file.
 
 ## How to use
 
-The only purpose of this script is to batch trigger `backup` command over several Restic repositories and eventually wrapping it with pre/post operations. It has been made to be inserted into `crontab` and do backup for you.
+The only purpose of this script is to batch trigger `backup` command over several Restic repositories, possibly wrapping it with pre/post operations. It has been made to be inserted into `crontab` and do backup for you.
 
 This means it won't setup the repositories for you, you'll need to do it by yourself.
 

@@ -68,5 +68,5 @@ if [ -n "${LOOKUP}" ]; then
 elif [ -n "${SHOW}" ]; then
     keepassxc-cli show -s -qk "${KEY}" "${DB}" "$NAME"
 else
-    keepassxc-cli clip -qa "${ATTR}" -k "${KEY}" "${DB}" "$NAME" 0
+    keepassxc-cli clip -qa "${ATTR}" -k "${KEY}" "${DB}" "$NAME" 0 2>/dev/null
 fi

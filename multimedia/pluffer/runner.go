@@ -62,7 +62,7 @@ func main() {
 					spotitube.ID(playlistID),
 					spotify.PlaylistReorderOptions{
 						RangeStart:   srcIndex,
-						InsertBefore: dstIndex + 1,
+						InsertBefore: dstIndex,
 					}); err != nil {
 					log.Printf("Playlist %s: %s\n", p.Name, err.Error())
 				} else {

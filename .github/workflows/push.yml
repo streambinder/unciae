@@ -8,26 +8,32 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
-  lint:
+  commitlint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Lint codebase
-        uses: docker://github/super-linter:latest
+      - uses: wagoid/commitlint-github-action@v5
+  super-linter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: docker://github/super-linter:latest
         env:
           GITHUB_TOKEN: ${{ secrets.GH_ACTIONS_UNCIAE }}
           VALIDATE_ALL_CODEBASE: false
   notify:
-    needs: [lint]
+    needs: [commitlint, super-linter]
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch push event
-        uses: peter-evans/repository-dispatch@v2
+      - uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.GH_ACTIONS_UNCIAE }}
           repository: streambinder/clavis

@@ -15,5 +15,5 @@ pip install -r requirements.txt
 Run the script and a desired subcommand (e.g. upgrade):
 
 ```bash
-./runner.py upgrade
+./runner.py up
 ```

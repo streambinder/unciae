@@ -3,11 +3,11 @@
 import getpass
 import hashlib
 import os
-import pyperclip
 from typing import Tuple, Union
 
 import asyncclick as click
 import pykeepass as kpx
+import pyperclip
 
 
 def capitalize_alpha(payload: str) -> str:
@@ -28,10 +28,12 @@ async def keepass(payload: str, secret: str) -> Union[Tuple[str, str], None]:
         return None
 
 
-async def gen(payload: str, secret: str, iteration: int, length: int) -> Tuple[str, str]:
+async def gen(
+    payload: str, secret: str, iteration: int, length: int
+) -> Tuple[str, str]:
     raw = f"{payload}@{secret}{str('+') * (iteration - 1)}"
     hash = f"#{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
-    return ("", capitalize_alpha(hash[: length]))
+    return ("", capitalize_alpha(hash[:length]))
 
 
 @click.command()

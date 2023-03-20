@@ -6,7 +6,7 @@ import os
 import platform
 import random
 import subprocess
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Tuple
 
 import asyncclick as click
 import trio
@@ -27,6 +27,10 @@ def next_color() -> str:
     return col
 
 
+async def sudo_subshell() -> trio.Process:
+    return await trio.run_process(["sudo", "-p", "Password: ", "echo", "-n"])
+
+
 def is_os(os: str) -> bool:
     return platform.system().lower().startswith(os.lower())
 
@@ -45,10 +49,20 @@ def dep(cmd: str | None = None, os: str = ""):
                 print(colored(f"{func.__name__} is unsupported", col))
                 return
 
-            async for process in func(
-                *args,
-                **kwargs | {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT},
-            ):
+            async for p_args, p_kwargs in func(*args, **kwargs):
+                if (type(p_args[0]) == list and p_args[0][0] == "sudo") or (
+                    type(p_args[0]) == str and p_args[0].startswith("sudo")
+                ):
+                    await sudo_subshell()
+
+                process = await trio.lowlevel.open_process(
+                    *p_args,
+                    **(
+                        p_kwargs
+                        | {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
+                    ),
+                )
+
                 while data := await process.stdout.receive_some():
                     print(
                         colored(data.decode(), col),
@@ -61,7 +75,7 @@ def dep(cmd: str | None = None, os: str = ""):
 
 
 @dep(os="linux")
-async def apt(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
+async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     apt_env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
     apt_prefix = [
         "apt",
@@ -71,91 +85,40 @@ async def apt(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
         "-o",
         "Dpkg::Options::='--force-confold'",
     ]
-    yield await trio.lowlevel.open_process(
-        apt_prefix + ["update"],
-        env=apt_env,
-        *args,
-        **kwargs,
-    )
-    yield await trio.lowlevel.open_process(
-        apt_prefix + ["upgrade"],
-        env=apt_env,
-        *args,
-        **kwargs,
-    )
-    yield await trio.lowlevel.open_process(
-        apt_prefix + ["dist-upgrade"],
-        env=apt_env,
-        *args,
-        **kwargs,
-    )
-    yield await trio.lowlevel.open_process(
-        apt_prefix + ["autoremove"],
-        env=apt_env,
-        *args,
-        **kwargs,
-    )
+    yield [apt_prefix + ["update"]], {"env": apt_env}
+    yield [apt_prefix + ["upgrade"]], {"env": apt_env}
+    yield [apt_prefix + ["dist-upgrade"]], {"env": apt_env},
+    yield [apt_prefix + ["autoremove"]], {"env": apt_env}
 
 
 @dep()
-async def brew(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
-    yield await trio.lowlevel.open_process(
-        ["brew", "update"],
-        *args,
-        **kwargs,
-    )
-    yield await trio.lowlevel.open_process(
-        ["brew", "upgrade"],
-        *args,
-        **kwargs,
-    )
+async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
+    yield [["brew", "-q", "update"]], {}
+    yield [["brew", "-q", "upgrade"]], {}
 
 
 @dep()
-async def managedsoftwareupdate(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
-    yield await trio.lowlevel.open_process(
-        ["sudo", "managedsoftwareupdate", "--installonly"],
-        *args,
-        **kwargs,
-    )
+async def managedsoftwareupdate(
+    *args, **kwargs
+) -> AsyncGenerator[Tuple[list, dict], None]:
+    yield [["sudo", "managedsoftwareupdate", "--installonly"]], {}
 
 
 @dep(cmd="zsh")
-async def omz(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
-    yield await trio.lowlevel.open_process(
-        'zsh -c "source $HOME/.zshrc && omz update"',
-        shell=True,
-        *args,
-        **kwargs,
-    )
+async def omz() -> AsyncGenerator[Tuple[list, dict], None]:
+    yield ['zsh -c "source $HOME/.zshrc && omz update"'], {"shell": True}
 
 
 @dep(os="darwin")
-async def softwareupdate(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
-    yield await trio.lowlevel.open_process(
-        ["softwareupdate", "-i", "-a"],
-        *args,
-        **kwargs,
-    )
+async def softwareupdate(*args, **kwargs) -> AsyncGenerator[Tuple[list, dict], None]:
+    yield [["softwareupdate", "-i", "-a"]], {}
 
 
 @dep()
-async def yadm(*args, **kwargs) -> AsyncGenerator[trio.Process, None]:
-    yield await trio.lowlevel.open_process(
-        ["yadm", "pull"],
-        *args,
-        **kwargs,
-    )
-    yield await trio.lowlevel.open_process(
-        ["yadm", "submodule", "update", "--init", "--recursive"],
-        *args,
-        **kwargs,
-    )
-    yield await trio.lowlevel.open_process(
-        ["yadm", "bootstrap"],
-        *args,
-        **kwargs,
-    )
+async def yadm() -> AsyncGenerator[Tuple[list, dict], None]:
+    yield [["yadm", "pull"]], {}
+    yield [["yadm", "submodule", "update", "--init", "--recursive"]], {}
+    yield [["yadm", "bootstrap"]], {}
 
 
 @click.command()

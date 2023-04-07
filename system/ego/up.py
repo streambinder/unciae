@@ -94,7 +94,7 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
 @dep()
 async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [["brew", "update", "-q"]], {}
-    yield [["brew", "upgrade", "-q"]], {}
+    yield [["brew", "upgrade", "-q", "--greedy"]], {}
 
 
 @dep()

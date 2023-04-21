@@ -41,9 +41,10 @@ async def gen(
 @click.option("-u", "--username", is_flag=True, default=False)
 @click.option("-i", "--iteration", type=int, default=1)
 @click.option("-l", "--length", type=int, default=16)
-async def id(payload: str, username: bool, iteration: int, length: int):
+@click.option("-g", "--generate", is_flag=True, default=False)
+async def id(payload: str, username: bool, iteration: int, length: int, generate: bool):
     secret = getpass.getpass("")
-    data = await keepass(payload, secret) or await gen(
+    data = (await keepass(payload, secret) if not generate else None) or await gen(
         payload, secret, iteration, length
     )
     pyperclip.copy(data[0] if username else data[1])

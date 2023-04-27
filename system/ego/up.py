@@ -6,7 +6,7 @@ import os
 import platform
 import random
 import subprocess
-from typing import AsyncGenerator, Tuple
+from typing import AsyncGenerator, List, Tuple
 
 import asyncclick as click
 import trio
@@ -39,13 +39,17 @@ def is_exec(cmd: str) -> bool:
     return distutils.spawn.find_executable(cmd) is not None
 
 
-def dep(cmd: str | None = None, os: str = ""):
+def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
     col = next_color()
+    has_os = is_os(platform)
+    has_envs = not any([env for env in (envs or list()) if env not in os.environ])
 
     def decorator_dep(func):
+        has_cmd = is_exec(cmd or func.__name__)
+
         @functools.wraps(func)
         async def wrapper_dep(*args, **kwargs):
-            if not (is_exec(cmd or func.__name__) and is_os(os)):
+            if not (has_cmd and has_os and has_envs):
                 print(colored(f"{func.__name__} is unsupported", col))
                 return
 
@@ -74,7 +78,7 @@ def dep(cmd: str | None = None, os: str = ""):
     return decorator_dep
 
 
-@dep(os="linux")
+@dep(platform="linux")
 async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     apt_env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
     apt_prefix = [
@@ -104,12 +108,12 @@ async def managedsoftwareupdate(
     yield [["sudo", "managedsoftwareupdate", "--installonly"]], {}
 
 
-@dep(cmd="zsh")
+@dep(cmd="zsh", envs=["ZSH"])
 async def omz() -> AsyncGenerator[Tuple[list, dict], None]:
-    yield ['zsh -c "source $HOME/.zshrc && omz update"'], {"shell": True}
+    yield [[f"{os.getenv('ZSH')}/tools/upgrade.sh"]], {}
 
 
-@dep(os="darwin")
+@dep(platform="darwin")
 async def softwareupdate(*args, **kwargs) -> AsyncGenerator[Tuple[list, dict], None]:
     yield [["softwareupdate", "-i", "-a"]], {}
 

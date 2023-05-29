@@ -43,6 +43,8 @@ async def gen(
 @click.option("-l", "--length", type=int, default=16)
 @click.option("-g", "--generate", is_flag=True, default=False)
 async def id(payload: str, username: bool, iteration: int, length: int, generate: bool):
+    if iteration > 1:
+        generate = True
     secret = getpass.getpass("")
     data = (await keepass(payload, secret) if not generate else None) or await gen(
         payload, secret, iteration, length

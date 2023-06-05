@@ -2,6 +2,7 @@
 
 import distutils.spawn
 import functools
+import hashlib
 import os
 import platform
 import random
@@ -13,18 +14,11 @@ import trio
 from termcolor import COLORS as colors
 from termcolor import colored
 
-COLORS = [
-    k
-    for k in colors.keys()
-    if k not in ["light_grey", "light_red"] and k.startswith("light")
-]
-random.shuffle(COLORS)
+COLORS = list(colors.keys())
 
 
-def next_color() -> str:
-    global COLORS
-    col, COLORS = COLORS[0], COLORS[1:] + [COLORS[0]]
-    return col
+def color_by_name(keyword: str) -> str:
+    return COLORS[sum(hashlib.md5(keyword.encode()).hexdigest().encode()) % len(COLORS)]
 
 
 async def sudo_subshell() -> trio.Process:
@@ -40,17 +34,20 @@ def is_exec(cmd: str) -> bool:
 
 
 def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
-    col = next_color()
     has_os = is_os(platform)
     has_envs = not any([env for env in (envs or list()) if env not in os.environ])
 
     def decorator_dep(func):
         has_cmd = is_exec(cmd or func.__name__)
+        color = color_by_name(func.__name__)
 
         @functools.wraps(func)
         async def wrapper_dep(*args, **kwargs):
             if not (has_cmd and has_os and has_envs):
-                print(colored(f"{func.__name__} is unsupported", col))
+                print(
+                    colored(func.__name__, color, attrs=["bold"]),
+                    colored("is unsupported", color),
+                )
                 return
 
             async for p_args, p_kwargs in func(*args, **kwargs):
@@ -68,10 +65,13 @@ def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
                 )
 
                 while data := await process.stdout.receive_some():
-                    print(
-                        colored(data.decode(), col),
-                        end="\r",
-                    )
+                    for line in data.decode().splitlines():
+                        if line := line.strip():
+                            print(
+                                colored(func.__name__, color, attrs=["bold"]),
+                                colored(line, color),
+                                flush=True,
+                            )
 
         return wrapper_dep
 

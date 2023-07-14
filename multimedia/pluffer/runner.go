@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"math/rand"
-	"strings"
 	"time"
 
 	spotitube "github.com/streambinder/spotitube/spotify"
-	spotify "github.com/zmb3/spotify"
+	spotify "github.com/zmb3/spotify/v2"
 )
 
 var argTimes int
@@ -24,53 +24,54 @@ func main() {
 		log.Fatal("At least a Spotify playlist URI is needed")
 	}
 
-	url := spotitube.BuildAuthURL("localhost")
-	client, clientErr := spotitube.Auth(url.Full, "localhost", true)
-	if clientErr != nil {
-		log.Fatal(clientErr)
+	client, err := spotitube.Authenticate(spotitube.BrowserProcessor)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	spotifyUser, spotifyUserID := client.User()
-	log.Printf("Authenticated as %s (%s)", spotifyUser, spotifyUserID)
+	user, err := client.CurrentUser(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Authenticated as %s (%s)", user.DisplayName, user.ID)
 
 	for i := 0; i < argTimes; i++ {
 		if argTimes > 1 {
 			log.Printf("Shuffling round %d...", i+1)
 		}
 
-		for playlistCtr, playlistURI := range flag.Args() {
-			playlistID := strings.Split(playlistURI, ":")[len(strings.Split(playlistURI, ":"))-1]
-
-			p, err := client.Playlist(playlistURI)
+		for i, arg := range flag.Args() {
+			playlist, err := client.Playlist(arg)
 			if err != nil {
-				log.Printf("Playlist %d: %s\n", playlistCtr+1, err.Error())
+				log.Printf("Playlist %d: %s\n", i+1, err.Error())
 				continue
 			}
 
-			if p.Owner.ID != spotifyUserID && !p.Collaborative {
-				log.Printf("Playlist %s: no permissions over it\n", p.Name)
+			if playlist.Owner != user.ID && !playlist.Collaborative {
+				log.Printf("Playlist %s: permission denied\n", playlist.Name)
 				continue
 			}
 
 			var (
-				reorderedSlice  = indicesSlice(p.Tracks.Total, true)
-				carbonCopySlice = indicesSlice(p.Tracks.Total, false)
+				reorderedSlice  = indicesSlice(len(playlist.Tracks), true)
+				carbonCopySlice = indicesSlice(len(playlist.Tracks), false)
 			)
 			for dstIndex, srcValue := range reorderedSlice {
 				srcIndex := valueIndex(carbonCopySlice, srcValue)
 				if _, err := client.ReorderPlaylistTracks(
-					spotitube.ID(playlistID),
+					context.Background(),
+					spotify.ID(playlist.ID),
 					spotify.PlaylistReorderOptions{
 						RangeStart:   srcIndex,
 						InsertBefore: dstIndex,
 					}); err != nil {
-					log.Printf("Playlist %s: %s\n", p.Name, err.Error())
+					log.Printf("Playlist %s: %s\n", playlist.Name, err.Error())
 				} else {
 					carbonCopySlice = reorderSliceItem(carbonCopySlice, srcIndex, dstIndex)
 				}
 			}
 
-			log.Printf("Playlist %s has been shuffled.", p.Name)
+			log.Printf("Playlist %s has been shuffled.", playlist.Name)
 		}
 	}
 }

@@ -3,21 +3,21 @@ module github.com/streambinder/unciae/multimedia/pluffer
 go 1.19
 
 require (
-	github.com/streambinder/spotitube v0.0.0-20220930132717-38edc576b0ee
-	github.com/zmb3/spotify v1.3.0
+	github.com/streambinder/spotitube v1.0.1
+	github.com/zmb3/spotify/v2 v2.3.1
 )
 
 require (
-	github.com/0xAX/notificator v0.0.0-20220220101646-ee9b8921e557 // indirect
-	github.com/bogem/id3v2 v1.2.0 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/gosimple/slug v1.12.0 // indirect
+	github.com/adrg/xdg v0.4.0 // indirect
+	github.com/agnivade/levenshtein v1.1.1 // indirect
+	github.com/arunsworld/nursery v0.6.0 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/gosimple/slug v1.13.1 // indirect
 	github.com/gosimple/unidecode v1.0.1 // indirect
-	github.com/thanhpk/randstr v1.0.4 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	github.com/thanhpk/randstr v1.0.6 // indirect
+	golang.org/x/net v0.12.0 // indirect
+	golang.org/x/oauth2 v0.10.0 // indirect
+	golang.org/x/sys v0.10.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 )

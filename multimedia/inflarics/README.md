@@ -15,7 +15,7 @@ Then, run the tool by path:
 
 ```bash
 go run ./inflarics/runner.go \
-    track.mp3 [-artist artist_name -title track_title]
+    track.mp3 [-a artist_name] [-t track_title]
 ```
 
 Or, in the GOish way:

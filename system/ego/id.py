@@ -22,7 +22,7 @@ async def keepass(payload: str, secret: str) -> Union[Tuple[str, str], None]:
         db = kpx.PyKeePass(
             os.environ.get("KPX_DB"), password=secret, keyfile=os.environ.get("KPX_KEY")
         )
-        entry = db.find_entries(title=payload, first=True)
+        entry = db.find_entries(title=payload, regex=True, first=True)
         return (entry.username, entry.password) if entry else None
     except kpx.exceptions.CredentialsError:
         return None

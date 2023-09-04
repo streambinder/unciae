@@ -45,7 +45,7 @@ async def gen(
 async def id(payload: str, username: bool, iteration: int, length: int, generate: bool):
     if iteration > 1:
         generate = True
-    secret = getpass.getpass("")
+    secret = getpass.getpass()
     data = (await keepass(payload, secret) if not generate else None) or await gen(
         payload, secret, iteration, length
     )

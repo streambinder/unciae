@@ -18,16 +18,15 @@ def capitalize_alpha(payload: str) -> str:
 
 
 async def keepass(payload: str, secret: str) -> Union[Tuple[str, str], None]:
-    try:
-        db = kpx.PyKeePass(
-            os.environ.get("KPX_DB"), password=secret, keyfile=os.environ.get("KPX_KEY")
-        )
-        if entry := db.find_entries(title=payload, regex=True, first=True):
-            return (entry.username, entry.password)
-        if entry := db.find_entries(notes=payload, regex=True, first=True):
-            return (entry.username, entry.password)
-    except kpx.exceptions.CredentialsError:
-        pass
+    for path in os.environ.get("KPX_DB").split(":"):
+        try:
+            db = kpx.PyKeePass(path, password=secret, keyfile=os.environ.get("KPX_KEY"))
+            if entry := db.find_entries(title=payload, regex=True, first=True):
+                return (entry.username, entry.password)
+            if entry := db.find_entries(notes=payload, regex=True, first=True):
+                return (entry.username, entry.password)
+        except kpx.exceptions.CredentialsError:
+            pass
     return None
 
 

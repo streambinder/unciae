@@ -39,19 +39,28 @@ func main() {
 					return errors.New("track title is mandatory")
 				}
 
-				log.Printf("Searching lyrics for %s by %s...\n", title, artist)
-				lyrics, err := lyrics.Search(&entity.Track{ID: util.Fallback(tag.SpotifyID(), fakeID(artist, title)), Title: title, Artists: []string{artist}})
+				var (
+					url, _ = cmd.Flags().GetString("url")
+					uslt   string
+				)
+				if len(url) > 0 {
+					log.Printf("Downloading lyrics from %s...\n", url)
+					uslt, err = lyrics.Get(url)
+				} else {
+					log.Printf("Searching lyrics for %s by %s...\n", title, artist)
+					uslt, err = lyrics.Search(&entity.Track{ID: util.Fallback(tag.SpotifyID(), fakeID(artist, title)), Title: title, Artists: []string{artist}})
+				}
 				if err != nil {
 					return err
 				}
 
-				if len(lyrics) == 0 {
+				if len(uslt) == 0 {
 					log.Printf("Lyrics not found\n")
 					continue
 				}
-				log.Printf("Found: %s\n", util.Excerpt(lyrics, 50))
+				log.Printf("Found: %s\n", util.Excerpt(uslt, 50))
 
-				tag.SetUnsynchronizedLyrics(title, lyrics)
+				tag.SetUnsynchronizedLyrics(title, uslt)
 				if err := tag.Save(); err != nil {
 					return err
 				}
@@ -61,6 +70,7 @@ func main() {
 	}
 	cmd.Flags().StringP("artist", "a", "", "Artist name")
 	cmd.Flags().StringP("title", "t", "", "Track title")
+	cmd.Flags().StringP("url", "u", "", "Lyrics URL")
 	cmd.Execute()
 }
 

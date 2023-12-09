@@ -82,6 +82,7 @@ def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
 async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     apt_env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
     apt_prefix = [
+        "sudo",
         "apt",
         "-y",
         "-o",

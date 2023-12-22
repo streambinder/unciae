@@ -83,7 +83,7 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     apt_env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
     apt_prefix = [
         "sudo",
-        "apt",
+        "apt-get",
         "-y",
         "-o",
         "Dpkg::Options::='--force-confdef'",

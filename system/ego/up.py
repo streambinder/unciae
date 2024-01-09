@@ -85,10 +85,6 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
         "sudo",
         "apt-get",
         "-y",
-        "-o",
-        "Dpkg::Options::='--force-confdef'",
-        "-o",
-        "Dpkg::Options::='--force-confold'",
     ]
     yield [apt_prefix + ["update"]], {"env": apt_env}
     yield [apt_prefix + ["upgrade"]], {"env": apt_env}

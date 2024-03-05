@@ -72,6 +72,11 @@ def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
                                 colored(line, color),
                                 flush=True,
                             )
+                print(
+                    colored(func.__name__, color, attrs=["bold"]),
+                    colored("done.", color),
+                    flush=True,
+                )
 
         return wrapper_dep
 

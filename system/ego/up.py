@@ -127,6 +127,11 @@ async def yadm() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [["yadm", "bootstrap"]], {}
 
 
+@dep(cmd="nix-env")
+async def nixenv() -> AsyncGenerator[Tuple[list, dict], None]:
+    yield [["nix-env", "-u", "*"]], {}
+
+
 @click.command()
 async def up():
     async with trio.open_nursery() as nursery:
@@ -136,3 +141,4 @@ async def up():
         nursery.start_soon(managedsoftwareupdate)
         nursery.start_soon(softwareupdate)
         nursery.start_soon(yadm)
+        nursery.start_soon(nixenv)

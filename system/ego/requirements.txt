@@ -1,5 +1,6 @@
 git+https://github.com/agronholm/anyio # not really needed, only a matter of annoying deprecation warnings
 asyncclick
+git+https://github.com/python-cffi/cffi # needed for https://github.com/python-cffi/cffi/commit/49127c6929bfc7186fbfd3819dd5e058ad888de4
 pykeepass
 pyperclip
 termcolor

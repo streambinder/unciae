@@ -50,6 +50,12 @@ def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
                 )
                 return
 
+            print(
+                colored(func.__name__, color, attrs=["bold"]),
+                colored("upgrading...", color),
+                flush=True,
+            )
+
             async for p_args, p_kwargs in func(*args, **kwargs):
                 if (type(p_args[0]) == list and p_args[0][0] == "sudo") or (
                     type(p_args[0]) == str and p_args[0].startswith("sudo")

@@ -6,7 +6,7 @@ require (
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/gosimple/slug v1.13.1
 	github.com/spf13/cobra v1.8.0
-	github.com/streambinder/spotitube v1.0.8
+	github.com/streambinder/spotitube v1.0.9
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.18.0 // indirect
-	golang.org/x/sys v0.14.0 // indirect
+	golang.org/x/net v0.23.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 )

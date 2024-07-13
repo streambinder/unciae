@@ -3,8 +3,8 @@ module github.com/streambinder/unciae/multimedia/pluffer
 go 1.19
 
 require (
-	github.com/streambinder/spotitube v1.0.1
-	github.com/zmb3/spotify/v2 v2.3.1
+	github.com/streambinder/spotitube v1.0.9
+	github.com/zmb3/spotify/v2 v2.4.1
 )
 
 require (
@@ -15,9 +15,8 @@ require (
 	github.com/gosimple/slug v1.13.1 // indirect
 	github.com/gosimple/unidecode v1.0.1 // indirect
 	github.com/thanhpk/randstr v1.0.6 // indirect
-	golang.org/x/net v0.23.0 // indirect
-	golang.org/x/oauth2 v0.10.0 // indirect
+	golang.org/x/oauth2 v0.17.0 // indirect
 	golang.org/x/sys v0.18.0 // indirect
-	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )

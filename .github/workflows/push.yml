@@ -33,7 +33,7 @@ jobs:
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - uses: peter-evans/repository-dispatch@v2
+      - uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GH_ACTIONS_UNCIAE }}
           repository: streambinder/clavis

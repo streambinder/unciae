@@ -36,7 +36,6 @@ while [[ $# -gt 0 ]]; do
         ;;
     *)
         TARGET="$1"
-        shift
         ;;
     esac
     shift || echo -n
@@ -63,7 +62,7 @@ find "${TARGET}" -type f -not -name '.*' | grep -iE ".*.($EXTS)$" | while read -
     [[ "${perm}" == "644" ]] || echo "fname=${fname} perm=${perm}"
 
     # check timestamps
-    exif_timestamps="$(exiftool -time:all "$fname")"
+    exif_timestamps="$(exiftool -time:all "${fname}")"
     exif_create_date="$(awk -F': ' '/^Create Date  /{print $2}' <<< "${exif_timestamps}" | awk 'NR==1 {print $1}')"
     fs_modification_time="$(awk -F': ' '/^File Modification Date\/Time  /{print $2}' <<< "${exif_timestamps}" | awk 'NR==1 {print $1}')"
     [[ "${fs_modification_time}" == "${exif_create_date}" ]] || echo "fname=${fname} fst=${fs_modification_time} et=${exif_create_date}"

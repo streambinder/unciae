@@ -1,7 +1,19 @@
+anyio
+argon2-cffi
+argon2-cffi-bindings
 asyncclick
-git+https://github.com/python-cffi/cffi # needed by pykeepass for https://github.com/python-cffi/cffi/commit/49127c6929bfc7186fbfd3819dd5e058ad888de4
+attrs
+cffi
+construct
+idna
+lxml
+outcome
+pycparser
+pycryptodomex
 pykeepass
 pyperclip
-setuptools # needed by pykeepass
+setuptools
+sniffio
+sortedcontainers
 termcolor
 trio

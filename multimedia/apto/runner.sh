@@ -18,8 +18,8 @@ function install_media_file() {
     dst_base="$(basename "${dst}")"
     while [ -e "${dst_dir}/${dst_base}" ]; do
         echo "Shifting ${dst_base}"
-        secs="${dst_base:13:2}"
-        dst_base="${dst_base:0:13}$(expr "${secs}" + 1).${dst_base##*.}"
+        secs="$(expr "${dst_base:13:2}" + 1)"
+        dst_base="${dst_base:0:13}$(printf %02s "${secs}").${dst_base##*.}"
     done
 
     # install file

@@ -73,7 +73,8 @@ while [[ $# -gt 0 ]]; do
         _modes=$(expr $_modes + 1)
         ;;
     *)
-        TARGET="$1"
+        [ "${TARGET}" == "." ] && TARGET=""
+        TARGET="${TARGET} $1"
         ;;
     esac
     shift || echo -n
@@ -156,5 +157,5 @@ while read -r fname <&3; do
     chmod 0644 "${fname}" && \
     install_media_file "${fname}" "${dirname}/${final_fname}"
 done 3< <(
-    find "${TARGET}" -type f -not -name '.*' | grep -iE ".*.($EXTS)$"
+    find ${TARGET} -type f -not -name '.*' | grep -iE ".*.($EXTS)$"
 )

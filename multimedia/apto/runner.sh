@@ -12,6 +12,8 @@ function install_media_file() {
     [ -z "${src}" ] && return 1
     dst="$2"
     [ -z "${dst}" ] && return 1
+    # don't move if we already have a file in the right position
+    [ "${src}" == "${dst}" ] && return 0
 
     # calculate shifts
     dst_dir="$(dirname "${dst}")"
@@ -20,6 +22,8 @@ function install_media_file() {
         echo "Shifting ${dst_base}"
         secs="$(expr "${dst_base:13:2}" + 1)"
         dst_base="${dst_base:0:13}$(printf %02s "${secs}").${dst_base##*.}"
+        # don't if we already have a file in the right position
+        [ "${src}" == "${dst_dir}/${dst_base}" ] && return 0
     done
 
     # install file

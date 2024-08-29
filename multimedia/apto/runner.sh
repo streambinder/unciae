@@ -6,6 +6,26 @@ function help() {
     echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-s/--smart]"
 }
 
+function install_media_file() {
+    # check args
+    src="$1"
+    [ -z "${src}" ] && return 1
+    dst="$2"
+    [ -z "${dst}" ] && return 1
+
+    # calculate shifts
+    dst_dir="$(dirname "${dst}")"
+    dst_base="$(basename "${dst}")"
+    while [ -e "${dst_dir}/${dst_base}" ]; do
+        echo "Shifting ${dst_base}"
+        secs="${dst_base:13:2}"
+        dst_base="${dst_base:0:13}$(expr "${secs}" + 1).${dst_base##*.}"
+    done
+
+    # install file
+    mv -vn "${src}" "${dst_dir}/${dst_base}"
+}
+
 # shell setup
 
 set -euo pipefail
@@ -130,7 +150,7 @@ while read -r fname <&3; do
         -DateTime="${final_exif_timestamp}" "${fname}" && \
     touch -c -a -m -t "${final_fs_timestamp}" "${fname}" && \
     chmod 0644 "${fname}" && \
-    mv -vn "${fname}" "${dirname}/${final_fname}"
+    install_media_file "${fname}" "${dirname}/${final_fname}"
 done 3< <(
     find "${TARGET}" -type f -not -name '.*' | grep -iE ".*.($EXTS)$"
 )

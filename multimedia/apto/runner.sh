@@ -139,7 +139,7 @@ while read -r fname <&3; do
 
     # compute timestamp formats
     final_exif_timestamp="${final_timestamp}"
-    final_fs_timestamp="${fs_modification_time//[!0-9]/}"
+    final_fs_timestamp="${final_timestamp//[!0-9]/}"
     final_fs_timestamp="${final_fs_timestamp:0:12}"
     final_fname="${final_timestamp//:/}.${fname##*.}"
     final_fname="${final_fname/ /-}"

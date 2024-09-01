@@ -142,7 +142,8 @@ while read -r fname <&3; do
     final_exif_timestamp="${final_timestamp}"
     final_fs_timestamp="${final_timestamp//[!0-9]/}"
     final_fs_timestamp="${final_fs_timestamp:0:12}"
-    final_fname="${final_timestamp//:/}.${fname##*.}"
+    final_ext="$(echo "${fname##*.}" | tr '[:upper:]' '[:lower:]' | sed 's/jpeg/jpg/')"
+    final_fname="${final_timestamp//:/}.${final_ext}"
     final_fname="${final_fname/ /-}"
 
     # perform the changes

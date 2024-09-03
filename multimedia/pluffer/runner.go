@@ -4,17 +4,17 @@ import (
 	"context"
 	"flag"
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	spotitube "github.com/streambinder/spotitube/spotify"
 	spotify "github.com/zmb3/spotify/v2"
 )
 
-var argTimes int
+var (
+	argTimes int
+)
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	flag.IntVar(&argTimes, "t", 1, "How many shufflings to do")
 	flag.Parse()
 }

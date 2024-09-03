@@ -21,37 +21,43 @@ func main() {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, path := range args {
-				tag, err := id3.Open(path, id3v2.Options{Parse: true})
-				if err != nil {
-					return err
+				tag, tagErr := id3.Open(path, id3v2.Options{Parse: true})
+				if tagErr != nil {
+					return tagErr
 				}
 				defer tag.Close()
 
-				artist, _ := cmd.Flags().GetString("artist")
-				artist = util.Fallback(artist, tag.Artist())
+				artist, artistErr := cmd.Flags().GetString("artist")
+				if artistErr != nil {
+					artist = tag.Artist()
+				}
 				if len(artist) == 0 {
 					return errors.New("artist name is mandatory")
 				}
 
-				title, _ := cmd.Flags().GetString("title")
-				title = util.Fallback(title, tag.Title())
+				title, titleErr := cmd.Flags().GetString("title")
+				if titleErr != nil {
+					artist = tag.Title()
+				}
 				if len(artist) == 0 {
 					return errors.New("track title is mandatory")
 				}
 
 				var (
-					url, _ = cmd.Flags().GetString("url")
-					uslt   string
+					url, urlErr = cmd.Flags().GetString("url")
+					uslt        string
+					lyricsErr   error
 				)
-				if len(url) > 0 {
-					log.Printf("Downloading lyrics from %s...\n", url)
-					uslt, err = lyrics.Get(url)
-				} else {
+
+				if urlErr != nil || len(url) == 0 {
 					log.Printf("Searching lyrics for %s by %s...\n", title, artist)
-					uslt, err = lyrics.Search(&entity.Track{ID: util.Fallback(tag.SpotifyID(), fakeID(artist, title)), Title: title, Artists: []string{artist}})
+					uslt, lyricsErr = lyrics.Search(&entity.Track{ID: util.Fallback(tag.SpotifyID(), fakeID(artist, title)), Title: title, Artists: []string{artist}})
+				} else {
+					log.Printf("Downloading lyrics from %s...\n", url)
+					uslt, lyricsErr = lyrics.Get(url)
 				}
-				if err != nil {
-					return err
+				if lyricsErr != nil {
+					return lyricsErr
 				}
 
 				if len(uslt) == 0 {
@@ -71,7 +77,9 @@ func main() {
 	cmd.Flags().StringP("artist", "a", "", "Artist name")
 	cmd.Flags().StringP("title", "t", "", "Track title")
 	cmd.Flags().StringP("url", "u", "", "Lyrics URL")
-	cmd.Execute()
+	if err := cmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func fakeID(artist, title string) string {

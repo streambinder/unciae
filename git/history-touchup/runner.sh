@@ -3,8 +3,8 @@
 # auxiliary functions
 
 function help() {
-    echo -e "Usage:\n\t$(basename "$0")"
-    exit 0
+	echo -e "Usage:\n\t$(basename "$0")"
+	exit 0
 }
 function rprint() { echo -en "\r\e[0K$*"; }
 function pprint() { echo -e "\r\e[0K$*"; }
@@ -14,12 +14,12 @@ function pprint() { echo -e "\r\e[0K$*"; }
 # arguments parsing
 
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-    -h | --help)
-        help
-        ;;
-    esac
-    shift
+	case "$1" in
+	-h | --help)
+		help
+		;;
+	esac
+	shift
 done
 
 # arguments validation

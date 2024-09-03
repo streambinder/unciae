@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 
-import distutils.spawn
 import functools
 import hashlib
 import os
 import platform
-import random
+import shutil
 import subprocess
-from typing import AsyncGenerator, List, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 
 import asyncclick as click
 import trio
@@ -25,17 +24,19 @@ async def sudo_subshell() -> trio.Process:
     return await trio.run_process(["sudo", "-p", "Password: ", "echo", "-n"])
 
 
-def is_os(os: str) -> bool:
-    return platform.system().lower().startswith(os.lower())
+def is_os(os_name: str) -> bool:
+    return platform.system().lower().startswith(os_name.lower())
 
 
 def is_exec(cmd: str) -> bool:
-    return distutils.spawn.find_executable(cmd) is not None
+    return shutil.which(cmd) is not None
 
 
-def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
-    has_os = is_os(platform)
-    has_envs = not any([env for env in (envs or list()) if env not in os.environ])
+def dep(
+    cmd: str | None = None, platform_name: str = "", envs: Optional[List[str]] = None
+):
+    has_os = is_os(platform_name)
+    has_envs = len([env for env in (envs or []) if env not in os.environ]) == 0
 
     def decorator_dep(func):
         has_cmd = is_exec(cmd or func.__name__)
@@ -57,8 +58,8 @@ def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
             )
 
             async for p_args, p_kwargs in func(*args, **kwargs):
-                if (type(p_args[0]) == list and p_args[0][0] == "sudo") or (
-                    type(p_args[0]) == str and p_args[0].startswith("sudo")
+                if (isinstance(p_args[0], list) and p_args[0][0] == "sudo") or (
+                    isinstance(p_args[0], str) and p_args[0].startswith("sudo")
                 ):
                     await sudo_subshell()
 
@@ -89,7 +90,7 @@ def dep(cmd: str | None = None, platform: str = "", envs: List[str] = None):
     return decorator_dep
 
 
-@dep(platform="linux")
+@dep(platform_name="linux")
 async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     apt_env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
     apt_prefix = [
@@ -99,7 +100,10 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     ]
     yield [apt_prefix + ["update"]], {"env": apt_env}
     yield [apt_prefix + ["upgrade"]], {"env": apt_env}
-    yield [apt_prefix + ["dist-upgrade"]], {"env": apt_env},
+    yield (
+        [apt_prefix + ["dist-upgrade"]],
+        {"env": apt_env},
+    )
     yield [apt_prefix + ["autoremove"]], {"env": apt_env}
 
 
@@ -110,9 +114,7 @@ async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
 
 
 @dep()
-async def managedsoftwareupdate(
-    *args, **kwargs
-) -> AsyncGenerator[Tuple[list, dict], None]:
+async def managedsoftwareupdate() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [["sudo", "managedsoftwareupdate", "--installonly"]], {}
 
 
@@ -121,8 +123,8 @@ async def omz() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [[f"{os.getenv('ZSH')}/tools/upgrade.sh"]], {}
 
 
-@dep(platform="darwin")
-async def softwareupdate(*args, **kwargs) -> AsyncGenerator[Tuple[list, dict], None]:
+@dep(platform_name="darwin")
+async def softwareupdate() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [["softwareupdate", "-i", "-a"]], {}
 
 
@@ -138,8 +140,8 @@ async def nixenv() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [["nix-env", "-u", "*"]], {}
 
 
-@click.command()
-async def up():
+@click.command(name="up")
+async def cmd_up():
     async with trio.open_nursery() as nursery:
         nursery.start_soon(apt)
         nursery.start_soon(brew)

@@ -1,13 +1,4 @@
 ---
-#########################
-#########################
-## Golang Linter rules ##
-#########################
-#########################
-
-# configure golangci-lint
-# https://github.com/golangci/golangci-lint/blob/master/.golangci.example.yml
-
 issues:
   exclude-rules:
     - path: _test\.go
@@ -16,7 +7,6 @@ issues:
         - gosec
         - goconst
 linters:
-  fast: true
   enable:
     - gosec
     - unconvert
@@ -28,15 +18,11 @@ linters:
     - revive
 linters-settings:
   errcheck:
-    # report about assignment of errors to blank identifier
-    # default is false: such cases aren't reported by default.
     check-blank: true
   govet:
-    # report about shadowed variables
-    check-shadowing: true
+    enable:
+      - shadowing
   gocyclo:
-    # minimal code complexity to report, 30 by default
     min-complexity: 15
   maligned:
-    # print struct with more effective memory layout or not, false by default
     suggest-new: true

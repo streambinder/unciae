@@ -13,7 +13,7 @@ func main() {
 		Use:   "volnorm",
 		Short: "Reset audio file max volume",
 		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			for _, path := range args {
 				log.Printf("Parsing max_volume for %s...\n", path)
 				volumeDelta, err := util.FFmpeg().VolumeDetect(path)
@@ -34,5 +34,7 @@ func main() {
 			return nil
 		},
 	}
-	cmd.Execute()
+	if err := cmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
 }

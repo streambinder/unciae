@@ -18,7 +18,11 @@ def capitalize_alpha(payload: str) -> str:
 
 
 async def keepass(payload: str, secret: str) -> Union[Tuple[str, str], None]:
-    for path in os.environ.get("KPX_DB").split(":"):
+    db_paths = os.environ.get("KPX_DB")
+    if not db_paths:
+        return None
+
+    for path in db_paths.split(":"):
         try:
             db = kpx.PyKeePass(path, password=secret, keyfile=os.environ.get("KPX_KEY"))
             if entry := db.find_entries(title=payload, regex=True, first=True):
@@ -27,6 +31,7 @@ async def keepass(payload: str, secret: str) -> Union[Tuple[str, str], None]:
                 return (entry.username, entry.password)
         except kpx.exceptions.CredentialsError:
             pass
+
     return None
 
 
@@ -34,17 +39,19 @@ async def gen(
     payload: str, secret: str, iteration: int, length: int
 ) -> Tuple[str, str]:
     raw = f"{payload}@{secret}{str('+') * (iteration - 1)}"
-    hash = f"#{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
-    return ("", capitalize_alpha(hash[:length]))
+    hashsum = f"#{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
+    return ("", capitalize_alpha(hashsum[:length]))
 
 
-@click.command()
+@click.command(name="id")
 @click.argument("payload")
 @click.option("-u", "--username", is_flag=True, default=False)
 @click.option("-i", "--iteration", type=int, default=1)
 @click.option("-l", "--length", type=int, default=16)
 @click.option("-g", "--generate", is_flag=True, default=False)
-async def id(payload: str, username: bool, iteration: int, length: int, generate: bool):
+async def cmd_id(
+    payload: str, username: bool, iteration: int, length: int, generate: bool
+):
     if iteration > 1:
         generate = True
     secret = getpass.getpass()

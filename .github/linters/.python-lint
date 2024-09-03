@@ -1,0 +1,11 @@
+[MASTER]
+
+jobs=0
+
+[MESSAGES CONTROL]
+
+disable=
+    import-error,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,

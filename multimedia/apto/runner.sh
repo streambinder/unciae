@@ -3,14 +3,14 @@
 # auxiliary functions
 
 function help() {
-    echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-s/--smart]"
+    echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart]"
 }
 
 function install_media_file() {
     # check args
-    src="$1"
+    src="$(sed 's|^./||' <<< "$1")"
     [ -z "${src}" ] && return 1
-    dst="$2"
+    dst="$(sed 's|^./||' <<< "$2")"
     [ -z "${dst}" ] && return 1
     # don't move if we already have a file in the right position
     [ "${src}" == "${dst}" ] && return 0
@@ -52,6 +52,7 @@ EXTS=(
     webp
     wmv
 )
+UNKNOWN_DATE="$(date +%s)"
 
 _modes=0
 while [[ $# -gt 0 ]]; do
@@ -66,6 +67,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     -f | --fs)
         MODE=fs
+        _modes=$(expr $_modes + 1)
+        ;;
+    -n | --name)
+        MODE=name
         _modes=$(expr $_modes + 1)
         ;;
     -s | --smart)
@@ -83,7 +88,7 @@ done
 # arguments validation
 
 if [ ${_modes} -gt 1 ]; then
-    echo "--exif, --fs and --smart flags are mutually exclusive"
+    echo "--exif, --fs, --name and --smart flags are mutually exclusive"
     exit 1
 fi
 
@@ -98,21 +103,39 @@ while read -r fname <&3; do
 
     # parse timestamps
     exif_timestamps="$(exiftool -time:all "${fname}")"
-    exif_create_date="$(awk -F': ' '/^Create Date  /{print $2}' <<< "${exif_timestamps}" | grep -v "0000:00:00" | awk -F'+' 'NR==1 {print $1}' || echo "9999:12:31 23:59:59")"
+    exif_create_date="$(awk -F': ' '/^Create Date  /{print $2}' <<< "${exif_timestamps}" | grep -v "0000:00:00" | awk -F'+' 'NR==1 {print $1}' || echo "${UNKNOWN_DATE}")"
     fs_modification_time="$(awk -F': ' '/^File Modification Date\/Time  /{print $2}' <<< "${exif_timestamps}" | awk -F'+' 'NR==1 {print $1}')"
+    name_date="${basename//[!0-9]/}"
+    name_date="${name_date:0:4}:${name_date:4:2}:${name_date:6:2} ${name_date:8:2}:${name_date:10:2}:${name_date:12:2}"
+    [ -z "${name_date}" ] && name_date="${UNKNOWN_DATE}"
 
     if [ "${MODE}" = "smart" ]; then
         # in smart mode, let's sort it by picking the older timestamp
-        [ ${fs_modification_time//[!0-9]/} -lt ${exif_create_date//[!0-9]/} ] && strategy=fs || strategy=exif
-        [ -z "${exif_create_date}" ] && strategy=fs
+        oldest="${name_date}"
+        strategy="name"
+        if [ "${fs_modification_time//[!0-9]/}" -lt "${oldest}" ]; then
+            oldest="${fs_modification_time//[!0-9]/}"
+            strategy="fs"
+        fi
+        if [ "${exif_create_date//[!0-9]/}" -lt "${oldest}" ]; then
+            oldest="${exif_create_date//[!0-9]/}"
+            strategy="exif"
+        fi
+        if [ "${oldest}" = "${UNKNOWN_DATE}" ]; then
+            echo "Can't infer best timestamp to use for ${basename}: exiting"
+            exit 1
+        fi
     elif [ "${MODE}" = "interactive" ]; then
         # in interactive mode, let's ask the user
-        echo -n "Choose a date for ${basename}: [E] ${exif_create_date} or [f] ${fs_modification_time} or [i] input? "
+        echo -n "Choose a date for ${basename}: [E] ${exif_create_date} or [f] ${fs_modification_time} or [n] ${name_date} or [i] input? "
         read -n1 choice
         echo
         case "${choice}" in
         [fF])
             strategy=fs
+            ;;
+        [nN])
+            strategy=name
             ;;
         [iI])
             strategy=input
@@ -134,6 +157,8 @@ while read -r fname <&3; do
         final_timestamp="${exif_create_date}"
     elif [ "${strategy}" = "fs" ]; then
         final_timestamp="${fs_modification_time}"
+    elif [ "${strategy}" = "name" ]; then
+        final_timestamp="${name_date}"
     else # input
         final_timestamp="${input_timestamp}"
     fi

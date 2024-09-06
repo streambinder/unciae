@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: super-linter/super-linter@v7.1.0
+      - uses: super-linter/super-linter@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GH_ACTIONS_UNCIAE }}
           VALIDATE_ALL_CODEBASE: false

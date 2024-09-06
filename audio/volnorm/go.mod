@@ -1,4 +1,4 @@
-module github.com/streambinder/unciae/multimedia/volnorm
+module github.com/streambinder/unciae/audio/volnorm
 
 go 1.19
 

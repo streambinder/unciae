@@ -1,4 +1,4 @@
-module github.com/streambinder/unciae/multimedia/inflarics
+module github.com/streambinder/unciae/audio/inflarics
 
 go 1.19
 

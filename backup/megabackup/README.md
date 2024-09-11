@@ -64,7 +64,7 @@ In the first lines of the script you've the ability to tune few parameters, such
 3. `BACKUP_EXT_FOLDERS`: to backup any other additional path
 4. `BACKUP_RETENTION`: to set backup retention (months)
 5. `BANDWIDTH_SHAPING`: to set the maximum bandwidth available for the backup synchronization to MEGA
-6. `BACKUP_MEGADIR`: to set in which MEGA folder to save backups (it tipically starts with `/Root/`)
+6. `BACKUP_MEGADIR`: to set in which MEGA folder to save backups (it typically starts with `/Root/`)
 
 ### Databases dumper user setup
 

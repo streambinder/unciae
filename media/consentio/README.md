@@ -1,6 +1,6 @@
 # Consentio
 
-This script checks for files compliancy within my NAS media files archive.
+This script checks for files compliance within my NAS media files archive.
 
 ## How to use
 

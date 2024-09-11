@@ -1,6 +1,6 @@
 # Apto
 
-This script enforces NAS media files compliancy on sets of files (which can be checked with `consentio`).
+This script enforces NAS media files compliance on sets of files (which can be checked with `consentio`).
 
 ## How to use
 

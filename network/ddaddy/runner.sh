@@ -67,7 +67,7 @@ if curl -f -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN}/records/A/${R
 	-H "Content-Type: application/json" \
 	-H "Authorization: sso-key ${API_KEY}:${API_SECRET}" \
 	--data '[{"data":"'"${public_ip}"'","name":"'"${RECORD}"'","ttl":3600,"type":"A"}]'; then
-	echo "Record A for ${RECORD} succesfully updated to ${public_ip}"
+	echo "Record A for ${RECORD} successfully updated to ${public_ip}"
 else
 	echo "Unable to update record A for ${RECORD} to ${public_ip}"
 fi

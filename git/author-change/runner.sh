@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") old@committ.er new_committer_name:new@committ.er"
+	echo -e "Usage:\n\t$(basename "$0") old@author.me new_name:new@author.me"
 	exit 0
 }
 function rprint() { echo -en "\r\e[0K$*"; }

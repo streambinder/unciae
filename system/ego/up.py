@@ -6,13 +6,13 @@ import hashlib
 import os
 import platform
 import shutil
-from typing import AsyncGenerator, List, Optional, Tuple
+from typing import Any, AsyncGenerator, List, Optional, Tuple
 
 import asyncclick as click
 from termcolor import COLORS as colors
 from termcolor import colored
 
-COLORS = list(colors.keys())
+COLORS = [color for color in colors.keys() if color not in ["black", "grey", "red"]]
 
 
 def color_by_name(keyword: str) -> str:
@@ -27,6 +27,20 @@ def is_exec(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def print_line(program: str, line: str, color: Optional[str] = None) -> None:
+    color = color if color else color_by_name(program)
+    print(
+        colored(program, color, attrs=["bold"]),
+        colored(line, color),
+        flush=True,
+    )
+
+
+async def print_stream(stream, program, color: Optional[str] = None) -> None:
+    while line := await stream.readline():
+        print_line(program, line.decode().strip(), color)
+
+
 def dep(
     cmd: str | None = None, platform_name: str = "", envs: Optional[List[str]] = None
 ):
@@ -34,23 +48,16 @@ def dep(
     has_envs = len([env for env in (envs or []) if env not in os.environ]) == 0
 
     def decorator_dep(func):
-        has_cmd = is_exec(cmd or func.__name__)
-        color = color_by_name(func.__name__)
+        program = func.__name__
+        has_cmd = is_exec(cmd or program)
 
         @functools.wraps(func)
-        async def wrapper_dep(*args, **kwargs):
+        async def wrapper_dep(*args: Any, **kwargs: Any):
             if not (has_cmd and has_os and has_envs):
-                print(
-                    colored(func.__name__, color, attrs=["bold"]),
-                    colored("is unsupported", color),
-                )
+                print_line(program, "is unsupported")
                 return
 
-            print(
-                colored(func.__name__, color, attrs=["bold"]),
-                colored("upgrading...", color),
-                flush=True,
-            )
+            print_line(program, "upgrading...")
 
             async for p_args, p_kwargs in func(*args, **kwargs):
                 if p_args[0].startswith("sudo"):
@@ -65,24 +72,12 @@ def dep(
                     **p_kwargs,
                 )
 
-                async def stream_output(stream):
-                    while line := await stream.readline():
-                        print(
-                            colored(func.__name__, color, attrs=["bold"]),
-                            colored(line.decode().strip(), color),
-                            flush=True,
-                        )
-
                 await asyncio.gather(
-                    stream_output(process.stdout),
-                    stream_output(process.stderr),
+                    print_stream(process.stdout, program),
+                    print_stream(process.stderr, program, "red"),
                 )
 
-            print(
-                colored(func.__name__, color, attrs=["bold"]),
-                colored("done.", color),
-                flush=True,
-            )
+            print_line(program, "done.")
 
         return wrapper_dep
 

@@ -13,4 +13,4 @@ ego.add_command(cmd_id)
 ego.add_command(cmd_up)
 
 if __name__ == "__main__":
-    ego(_anyio_backend="trio")
+    ego()

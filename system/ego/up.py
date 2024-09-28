@@ -86,16 +86,16 @@ def dep(
 
 @dep(platform_name="linux")
 async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
-    apt_env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
-    apt_prefix = [
+    kwargs = {"env": dict(os.environ, DEBIAN_FRONTEND="noninteractive")}
+    apt_get = [
         "sudo",
         "apt-get",
         "-y",
     ]
-    yield apt_prefix + ["update"], {"env": apt_env}
-    yield apt_prefix + ["upgrade"], {"env": apt_env}
-    yield apt_prefix + ["dist-upgrade"], {"env": apt_env}
-    yield apt_prefix + ["autoremove"], {"env": apt_env}
+    yield apt_get + ["update"], kwargs
+    yield apt_get + ["upgrade"], kwargs
+    yield apt_get + ["dist-upgrade"], kwargs
+    yield apt_get + ["autoremove"], kwargs
 
 
 @dep()

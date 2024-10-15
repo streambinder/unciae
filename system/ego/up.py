@@ -64,6 +64,9 @@ def is_exec(cmd: str) -> bool:
 
 
 def print_line(program: str, line: str, color: Optional[str] = None) -> None:
+    if not line:
+        return
+
     color = color if color else color_by_name(program)
     print(
         colored(program, color, attrs=["bold"]),

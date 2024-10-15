@@ -12,6 +12,7 @@ from typing import Any, AsyncGenerator, List, Optional, Tuple
 import asyncclick as click
 from termcolor import colored
 
+DEP_FNS = set()
 SHELL_COLORS = [
     "green",
     "yellow",
@@ -124,6 +125,7 @@ def dep(
 
             print_line(program, "upgrade complete.")
 
+        DEP_FNS.add(wrapper_dep)
         return wrapper_dep
 
     return decorator_dep
@@ -179,10 +181,5 @@ async def nixenv() -> AsyncGenerator[Tuple[list, dict], None]:
 @click.command(name="up")
 async def cmd_up():
     async with asyncio.TaskGroup() as upgrades:
-        upgrades.create_task(apt())
-        upgrades.create_task(brew())
-        upgrades.create_task(omz())
-        upgrades.create_task(managedsoftwareupdate())
-        upgrades.create_task(softwareupdate())
-        upgrades.create_task(yadm())
-        upgrades.create_task(nixenv())
+        for fn in DEP_FNS:
+            upgrades.create_task(fn())

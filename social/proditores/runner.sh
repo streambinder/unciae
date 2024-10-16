@@ -84,7 +84,7 @@ pprint "Proditores found for not following back:"
 awk -F'-' '/^-/ {print $2}' <<<"${followers_x_following}" | xargs printf "\- https://instagram.com/%s\n"
 echo
 
-pprint "Proditores found for not pending follow request:"
+pprint "Proditores found for not accepting follow request:"
 echo "${pending}" | xargs printf "\- https://instagram.com/%s\n"
 echo
 

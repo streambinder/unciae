@@ -20,7 +20,7 @@ function install_media_file() {
 	dst_base="$(basename "${dst}")"
 	while [ -e "${dst_dir}/${dst_base}" ]; do
 		echo "Shifting ${dst_base}"
-		secs="$((${dst_base:13:2} + 1))"
+		secs="$((10#${dst_base:13:2} + 1))"
 		dst_base="${dst_base:0:13}$(printf %02d "${secs}").${dst_base##*.}"
 		# don't if we already have a file in the right position
 		[ "${src}" == "${dst_dir}/${dst_base}" ] && return 0

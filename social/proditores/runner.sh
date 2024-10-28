@@ -80,6 +80,23 @@ pending="$(jq -r '.relationships_follow_requests_sent[].string_list_data[].value
 rprint "Computing blocked accounts set from file..."
 [ -n "${blocked_json}" ] && blocked="$(jq -r '.relationships_blocked_users[].string_list_data[].href' <"${blocked_json}" | sort -u)"
 
+rprint "Pulling last run followers cache..."
+cache_path="$(find "$HOME/.cache/proditores" -type f -name 'followers-*' 2>/dev/null | sort | tail -1)"
+
+rprint "Dumping cache of current followers..."
+mkdir -p "$HOME/.cache/proditores" && echo "${followers}" >"$HOME/.cache/proditores/followers-$(date +%s)"
+
+if [ -n "${cache_path}" ]; then
+	rprint "Computing unfollowed accounts set..."
+	unfollowed="$(diff -urN "${cache_path}" <(echo "${followers}") | awk -F'-' '/^-/ {print $2}')"
+
+	if [ -n "${unfollowed}" ]; then
+		pprint "Proditores found for unfollowing:"
+		echo "${unfollowed}" | xargs printf "\- https://instagram.com/%s\n"
+		echo
+	fi
+fi
+
 pprint "Proditores found for not following back:"
 awk -F'-' '/^-/ {print $2}' <<<"${followers_x_following}" | xargs printf "\- https://instagram.com/%s\n"
 echo

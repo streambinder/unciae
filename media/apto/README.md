@@ -22,6 +22,12 @@ Conversely, with `-f` (or `--fs`) flag, FS timestamps will be used:
 apto/runner.sh --fs path/to/files
 ```
 
+With `-n` (or `--name`) flag, the script will try to infer the date from filename:
+
+```bash
+apto/runner.sh --name path/to/files
+```
+
 In some cases, `-s` (or `--smart`) flag might be useful as well, for letting the tool smartly decide:
 
 ```bash

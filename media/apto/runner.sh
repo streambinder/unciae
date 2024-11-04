@@ -45,6 +45,7 @@ MODE=interactive
 TARGETS=()
 EXTS=(
 	3gp
+	arw
 	avi
 	heic
 	jpeg

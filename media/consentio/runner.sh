@@ -15,6 +15,7 @@ set -euo pipefail
 TARGET=.
 EXTS=(
 	3gp
+	arw
 	avi
 	heic
 	jpeg

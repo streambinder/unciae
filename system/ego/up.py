@@ -77,7 +77,7 @@ def print_line(program: str, line: str, color: Optional[str] = None) -> None:
 
 async def print_stream(stream, program, color: Optional[str] = None) -> None:
     while line := await stream.readline():
-        print_line(program, line.decode().strip(), color)
+        print_line(program, line.decode().rstrip(), color)
 
 
 async def write_stdin(stdin: Optional[asyncio.StreamWriter] = None) -> None:

@@ -84,8 +84,9 @@ async def write_stdin(stdin: Optional[asyncio.StreamWriter] = None) -> None:
     if not stdin:
         return
 
-    stdin.writelines([get_pass().encode("utf-8") + b"\n"] * 100)
+    stdin.write(get_pass().encode("utf-8") + b"\n")
     await stdin.drain()
+    stdin.close()
 
 
 def dep(

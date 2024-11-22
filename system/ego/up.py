@@ -149,6 +149,11 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
     yield apt_get + ["autoremove"], kwargs
 
 
+@dep(platform_name="linux")
+async def dnf() -> AsyncGenerator[Tuple[list, dict], None]:
+    yield ["sudo", "dnf", "upgrade"], {}
+
+
 @dep()
 async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["brew", "update", "-q"], {}

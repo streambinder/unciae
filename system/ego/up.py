@@ -151,7 +151,7 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
 
 @dep(platform_name="linux")
 async def dnf() -> AsyncGenerator[Tuple[list, dict], None]:
-    yield ["sudo", "dnf", "upgrade"], {}
+    yield ["sudo", "dnf", "upgrade", "-y"], {}
 
 
 @dep()

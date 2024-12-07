@@ -169,6 +169,13 @@ while read -r fname <&3; do
 	else # input
 		final_timestamp="${input_timestamp}"
 	fi
+
+	# reject if we aren't able to compute the right timestamp
+	if [ "${final_timestamp}" = "${UNKNOWN_DATE}" ]; then
+		echo "Can't compute the right best timestamp to use for ${basename}: exiting"
+		exit 1
+	fi
+
 	echo "Chosen date: ${final_timestamp}"
 
 	# compute timestamp formats

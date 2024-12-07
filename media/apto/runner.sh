@@ -180,9 +180,9 @@ while read -r fname <&3; do
 	final_fname="${final_fname/ /-}"
 
 	# perform the changes
-	exiftool -overwrite_original -trailer= -wm w \
+	exiftool -overwrite_original -m -trailer= -wm w \
 		-time:all="${final_exif_timestamp}" "${fname}" &&
-		exiftool -overwrite_original \
+		exiftool -overwrite_original -m \
 			-CreateDate="${final_exif_timestamp}" \
 			-DateTimeOriginal="${final_exif_timestamp}" \
 			-MediaCreateDate="${final_exif_timestamp}" \

@@ -62,8 +62,8 @@ func main() {
 					context.Background(),
 					spotify.ID(playlist.ID),
 					spotify.PlaylistReorderOptions{
-						RangeStart:   srcIndex,
-						InsertBefore: dstIndex,
+						RangeStart:   spotify.Numeric(srcIndex),
+						InsertBefore: spotify.Numeric(dstIndex),
 					}); err != nil {
 					log.Printf("Playlist %s: %s\n", playlist.Name, err.Error())
 				} else {

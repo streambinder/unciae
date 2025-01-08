@@ -59,7 +59,7 @@ followers_json="$(find "${TARGET}" -name followers_1.json)"
 
 rprint "Locating pending_follow_requests.json file..."
 pending_json="$(find "${TARGET}" -name pending_follow_requests.json)"
-[ -z "${pending_json}" ] && pprint "Unable to locate pending_follow_requests.json file" && exit 1
+[ -z "${pending_json}" ] && pprint "Unable to locate pending_follow_requests.json file"
 
 rprint "Locating blocked_profiles.json file..."
 blocked_json="$(find "${TARGET}" -name blocked_profiles.json)"
@@ -75,7 +75,7 @@ rprint "Computing unfollowed back accounts set from followers and following..."
 followers_x_following="$(diff -urN <(echo "${following}") <(echo "${followers}"))"
 
 rprint "Computing pending accounts set from file..."
-pending="$(jq -r '.relationships_follow_requests_sent[].string_list_data[].value' <"${pending_json}" | sort -u)"
+[ -n "${pending_json}" ] && pending="$(jq -r '.relationships_follow_requests_sent[].string_list_data[].value' <"${pending_json}" | sort -u)"
 
 rprint "Computing blocked accounts set from file..."
 [ -n "${blocked_json}" ] && blocked="$(jq -r '.relationships_blocked_users[].string_list_data[].href' <"${blocked_json}" | sort -u)"
@@ -101,9 +101,11 @@ pprint "Proditores found for not following back:"
 awk -F'-' '/^-/ {print $2}' <<<"${followers_x_following}" | xargs printf "\- https://instagram.com/%s\n"
 echo
 
-pprint "Proditores found for not accepting follow request:"
-echo "${pending}" | xargs printf "\- https://instagram.com/%s\n"
-echo
+if [ -n "${pending_json}" ]; then
+	pprint "Proditores found for not accepting follow request:"
+	echo "${pending}" | xargs printf "\- https://instagram.com/%s\n"
+	echo
+fi
 
 pprint "You are proditor for $(grep ^+ <<<"${followers_x_following}" | sort -u | wc -l | xargs) accounts."
 if [ -n "${blocked_json}" ]; then

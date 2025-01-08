@@ -13,7 +13,7 @@ set -euo pipefail
 
 # effective script
 
-cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/../.."
+cd "$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" &>/dev/null && pwd)/../.."
 for category in *; do
 	[ -d "${category}" ] || continue
 

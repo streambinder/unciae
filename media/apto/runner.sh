@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart]"
+	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart] [-d/--dry-run]"
 }
 
 function install_media_file() {
@@ -42,6 +42,7 @@ set -euo pipefail
 # arguments parsing
 
 MODE=interactive
+DRY_RUN=0
 TARGETS=()
 EXTS=(
 	3gp
@@ -66,6 +67,9 @@ while [[ $# -gt 0 ]]; do
 	-h | --help)
 		help
 		exit 0
+		;;
+	-d | --dry-run)
+		DRY_RUN=1
 		;;
 	-e | --exif)
 		MODE=exif
@@ -95,6 +99,10 @@ done
 if [ "${_modes}" -gt 1 ]; then
 	echo "--exif, --fs, --name and --smart flags are mutually exclusive"
 	exit 1
+fi
+
+if [ "${DRY_RUN}" = 1 ] && [ "${MODE}" = "interactive" ]; then
+	MODE=smart
 fi
 
 # effective script
@@ -176,7 +184,8 @@ while read -r fname <&3; do
 		exit 1
 	fi
 
-	echo "Chosen date: ${final_timestamp}"
+	echo "Chosen date for ${fname}: ${final_timestamp}"
+	[ "${DRY_RUN}" = 1 ] && continue
 
 	# compute timestamp formats
 	final_exif_timestamp="${final_timestamp}"

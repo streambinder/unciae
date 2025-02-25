@@ -162,7 +162,7 @@ async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
 
 @dep(cmd="managedsoftwareupdate")
 async def msc() -> AsyncGenerator[Tuple[list, dict], None]:
-    yield ["sudo", "managedsoftwareupdate", "--installonly"], {}
+    yield ["sudo", "managedsoftwareupdate", "--installonly", "--quiet"], {}
 
 
 @dep(cmd="zsh", env=["ZSH"])

@@ -160,8 +160,8 @@ async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["brew", "upgrade", "-q", "--greedy"], {}
 
 
-@dep()
-async def managedsoftwareupdate() -> AsyncGenerator[Tuple[list, dict], None]:
+@dep(cmd="managedsoftwareupdate")
+async def msc() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["sudo", "managedsoftwareupdate", "--installonly"], {}
 
 
@@ -170,8 +170,8 @@ async def omz() -> AsyncGenerator[Tuple[list, dict], None]:
     yield [f"{os.getenv('ZSH')}/tools/upgrade.sh"], {}
 
 
-@dep(platform_name="darwin")
-async def softwareupdate() -> AsyncGenerator[Tuple[list, dict], None]:
+@dep(platform_name="darwin", cmd="softwareupdate")
+async def macos() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["sudo", "softwareupdate", "-iaR"], {}
 
 
@@ -183,7 +183,7 @@ async def yadm() -> AsyncGenerator[Tuple[list, dict], None]:
 
 
 @dep(cmd="nix-env")
-async def nixenv() -> AsyncGenerator[Tuple[list, dict], None]:
+async def nix() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["nix-env", "-u", "*"], {}
 
 

@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart] [-d/--dry-run]"
+	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run]"
 }
 
 function install_media_file() {
@@ -60,6 +60,7 @@ EXTS=(
 	wmv
 )
 UNKNOWN_DATE="$(date +'%Y:%m:%d %H:%M:%S')"
+TIME=""
 
 _modes=0
 while [[ $# -gt 0 ]]; do
@@ -87,6 +88,12 @@ while [[ $# -gt 0 ]]; do
 		MODE=smart
 		_modes="$((_modes + 1))"
 		;;
+	-t | --time)
+		TIME="$2"
+		MODE=static
+		_modes="$((_modes + 1))"
+		shift || echo -n
+		;;
 	*)
 		TARGETS+=("$1")
 		;;
@@ -97,12 +104,24 @@ done
 # arguments validation
 
 if [ "${_modes}" -gt 1 ]; then
-	echo "--exif, --fs, --name and --smart flags are mutually exclusive"
+	echo "--exif, --fs, --name, --smart and --time flags are mutually exclusive"
 	exit 1
 fi
 
 if [ "${DRY_RUN}" = 1 ] && [ "${MODE}" = "interactive" ]; then
 	MODE=smart
+fi
+
+if [ "${MODE}" = "static" ]; then
+	TIME="${TIME//[!0-9]/}"
+	if [ "${#TIME}" -lt 8 ]; then
+		echo "At least YYYY-MM-DD granularity must be given for --time (${TIME}): exiting"
+		exit 1
+	fi
+
+	TIME="$(printf %-14d "${TIME}" | tr ' ' 0)"
+	TIME="${TIME:0:4}:${TIME:4:2}:${TIME:6:2} ${TIME:8:2}:${TIME:10:2}:${TIME:12:2}"
+	echo "Statically using time: ${TIME}"
 fi
 
 # effective script
@@ -114,68 +133,71 @@ while read -r fname <&3; do
 	basename="$(basename "${fname}")"
 	echo "Processing ${basename}..."
 
-	# parse timestamps
-	exif_timestamps="$(exiftool -time:all "${fname}")"
-	exif_create_date="$(awk -F': ' '/^Create Date  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | awk -F'+' 'NR==1 {print $1}' || echo "${UNKNOWN_DATE}")"
-	[ "${#exif_create_date}" = 16 ] && exif_create_date="${exif_create_date}:00"
-	fs_modification_time="$(awk -F': ' '/^File Modification Date\/Time  /{print $2}' <<<"${exif_timestamps}" | awk -F'+' 'NR==1 {print $1}')"
-	name_date="${basename%.*}"
-	name_date="${name_date//[!0-9]/}"
-	name_date="${name_date:0:4}:${name_date:4:2}:${name_date:6:2} ${name_date:8:2}:${name_date:10:2}:${name_date:12:2}"
-	[[ "${name_date}" =~ ^[0-9]{4}:[0-9]{2}:[0-9]{2}\ [0-2]{1}[0-9]{1}:[0-5]{1}[0-9]{1}:[0-5]{1}[0-9]{1}$ ]] || name_date="${UNKNOWN_DATE}"
+	final_timestamp="${TIME}"
+	if [ "${MODE}" != "static" ]; then
+		# parse timestamps
+		exif_timestamps="$(exiftool -time:all "${fname}")"
+		exif_create_date="$(awk -F': ' '/^Create Date  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | awk -F'+' 'NR==1 {print $1}' || echo "${UNKNOWN_DATE}")"
+		[ "${#exif_create_date}" = 16 ] && exif_create_date="${exif_create_date}:00"
+		fs_modification_time="$(awk -F': ' '/^File Modification Date\/Time  /{print $2}' <<<"${exif_timestamps}" | awk -F'+' 'NR==1 {print $1}')"
+		name_date="${basename%.*}"
+		name_date="${name_date//[!0-9]/}"
+		name_date="${name_date:0:4}:${name_date:4:2}:${name_date:6:2} ${name_date:8:2}:${name_date:10:2}:${name_date:12:2}"
+		[[ "${name_date}" =~ ^[0-9]{4}:[0-9]{2}:[0-9]{2}\ [0-2]{1}[0-9]{1}:[0-5]{1}[0-9]{1}:[0-5]{1}[0-9]{1}$ ]] || name_date="${UNKNOWN_DATE}"
 
-	if [ "${MODE}" = "smart" ]; then
-		# in smart mode, let's sort it by picking the older timestamp
-		oldest="${name_date//[!0-9]/}"
-		strategy="name"
-		if [ "${fs_modification_time//[!0-9]/}" -lt "${oldest}" ]; then
-			oldest="${fs_modification_time//[!0-9]/}"
-			strategy="fs"
+		if [ "${MODE}" = "smart" ]; then
+			# in smart mode, let's sort it by picking the older timestamp
+			oldest="${name_date//[!0-9]/}"
+			strategy="name"
+			if [ "${fs_modification_time//[!0-9]/}" -lt "${oldest}" ]; then
+				oldest="${fs_modification_time//[!0-9]/}"
+				strategy="fs"
+			fi
+			if [ "${exif_create_date//[!0-9]/}" -lt "${oldest}" ]; then
+				oldest="${exif_create_date//[!0-9]/}"
+				strategy="exif"
+			fi
+			if [ "${oldest}" = "${UNKNOWN_DATE//[!0-9]/}" ]; then
+				echo "Can't infer best timestamp to use for ${basename}: exiting"
+				exit 1
+			fi
+		elif [ "${MODE}" = "interactive" ]; then
+			# in interactive mode, let's ask the user
+			echo -n "Choose a date for ${basename}: [E] ${exif_create_date} or [f] ${fs_modification_time} or [n] ${name_date} or [i] input? "
+			read -rn1 choice
+			echo
+			case "${choice}" in
+			[fF])
+				strategy=fs
+				;;
+			[nN])
+				strategy=name
+				;;
+			[iI])
+				strategy=input
+				echo -n "Input a date: "
+				read -r t
+				t="${t//[!0-9]/}"
+				input_timestamp="${t:0:4}:${t:4:2}:${t:6:2} ${t:8:2}:${t:10:2}:${t:12:2}"
+				;;
+			*)
+				strategy=exif
+				;;
+			esac
+		else
+			strategy="${MODE}"
 		fi
-		if [ "${exif_create_date//[!0-9]/}" -lt "${oldest}" ]; then
-			oldest="${exif_create_date//[!0-9]/}"
-			strategy="exif"
-		fi
-		if [ "${oldest}" = "${UNKNOWN_DATE//[!0-9]/}" ]; then
-			echo "Can't infer best timestamp to use for ${basename}: exiting"
-			exit 1
-		fi
-	elif [ "${MODE}" = "interactive" ]; then
-		# in interactive mode, let's ask the user
-		echo -n "Choose a date for ${basename}: [E] ${exif_create_date} or [f] ${fs_modification_time} or [n] ${name_date} or [i] input? "
-		read -rn1 choice
-		echo
-		case "${choice}" in
-		[fF])
-			strategy=fs
-			;;
-		[nN])
-			strategy=name
-			;;
-		[iI])
-			strategy=input
-			echo -n "Input a date: "
-			read -r t
-			t="${t//[!0-9]/}"
-			input_timestamp="${t:0:4}:${t:4:2}:${t:6:2} ${t:8:2}:${t:10:2}:${t:12:2}"
-			;;
-		*)
-			strategy=exif
-			;;
-		esac
-	else
-		strategy="${MODE}"
-	fi
 
-	# choose the timestamp
-	if [ "${strategy}" = "exif" ]; then
-		final_timestamp="${exif_create_date}"
-	elif [ "${strategy}" = "fs" ]; then
-		final_timestamp="${fs_modification_time}"
-	elif [ "${strategy}" = "name" ]; then
-		final_timestamp="${name_date}"
-	else # input
-		final_timestamp="${input_timestamp}"
+		# choose the timestamp
+		if [ "${strategy}" = "exif" ]; then
+			final_timestamp="${exif_create_date}"
+		elif [ "${strategy}" = "fs" ]; then
+			final_timestamp="${fs_modification_time}"
+		elif [ "${strategy}" = "name" ]; then
+			final_timestamp="${name_date}"
+		else # input
+			final_timestamp="${input_timestamp}"
+		fi
 	fi
 
 	# reject if we aren't able to compute the right timestamp

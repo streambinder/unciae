@@ -61,9 +61,9 @@ fi
 # effective script
 
 if [ "${ADDRESS:0:1}" = "@" ]; then
-	name="input coordinates"
 	latitude="$(awk -F',' '{print $1}' <<<"${ADDRESS/@/}")"
 	longitude="$(awk -F',' '{print $2}' <<<"${ADDRESS}")"
+	name="$(curl -s "https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}" | jq -r '.display_name')"
 else
 	echo "Fetching coordinates for ${ADDRESS}..."
 	address_encoded="$(jq -rn --arg address "${ADDRESS}" '$address|@uri')"

@@ -53,7 +53,7 @@ done
 
 # arguments validation
 
-if [ -z "${ADDRESS}" ]; then
+if [ -z "${TARGETS}" ] || [ -z "${ADDRESS}" ]; then
 	help
 	exit 1
 fi

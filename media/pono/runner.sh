@@ -60,22 +60,28 @@ fi
 
 # effective script
 
-echo "Fetching coordinates for ${ADDRESS}..."
-address_encoded="$(jq -rn --arg address "${ADDRESS}" '$address|@uri')"
-osm_data="$(curl -s "https://nominatim.openstreetmap.org/search?format=json&q=${address_encoded}")"
-osm_results="$(jq -r length <<<"${osm_data}")"
-if [ "${osm_results}" -eq 0 ]; then
-	echo "No results found."
-	exit 1
-elif [ "${osm_results}" -gt 1 ]; then
-	echo "Query returned more than one result:"
-	jq -r '.[]|("- " + .display_name)' <<<"${osm_data}"
-	exit 1
+if [ "${ADDRESS:0:1}" = "@" ]; then
+	name="input coordinates"
+	latitude="$(awk -F',' '{print $1}' <<< "${ADDRESS/@/}")"
+	longitude="$(awk -F',' '{print $2}' <<< "${ADDRESS}")"
+else
+	echo "Fetching coordinates for ${ADDRESS}..."
+	address_encoded="$(jq -rn --arg address "${ADDRESS}" '$address|@uri')"
+	osm_data="$(curl -s "https://nominatim.openstreetmap.org/search?format=json&q=${address_encoded}")"
+	osm_results="$(jq -r length <<<"${osm_data}")"
+	if [ "${osm_results}" -eq 0 ]; then
+		echo "No results found."
+		exit 1
+	elif [ "${osm_results}" -gt 1 ]; then
+		echo "Query returned more than one result:"
+		jq -r '.[]|("- " + .display_name)' <<<"${osm_data}"
+		exit 1
+	fi
+	name="$(jq -r '.[0].display_name' <<<"${osm_data}")"
+	latitude="$(jq -r '.[0].lat' <<<"${osm_data}")"
+	longitude="$(jq -r '.[0].lon' <<<"${osm_data}")"
 fi
 
-name="$(jq -r '.[0].display_name' <<<"${osm_data}")"
-latitude="$(jq -r '.[0].lat' <<<"${osm_data}")"
-longitude="$(jq -r '.[0].lon' <<<"${osm_data}")"
 altitude=$(curl -s "https://api.open-elevation.com/api/v1/lookup?locations=${latitude},${longitude}" | jq -r '.results[0].elevation')
 echo "Found ${name}: lat ${latitude}, lon ${longitude}, alt ${altitude}"
 

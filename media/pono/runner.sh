@@ -53,7 +53,7 @@ done
 
 # arguments validation
 
-if [ -z "${TARGETS}" ] || [ -z "${ADDRESS}" ]; then
+if [ -z "${TARGETS[0]}" ] || [ -z "${ADDRESS}" ]; then
 	help
 	exit 1
 fi
@@ -62,8 +62,8 @@ fi
 
 if [ "${ADDRESS:0:1}" = "@" ]; then
 	name="input coordinates"
-	latitude="$(awk -F',' '{print $1}' <<< "${ADDRESS/@/}")"
-	longitude="$(awk -F',' '{print $2}' <<< "${ADDRESS}")"
+	latitude="$(awk -F',' '{print $1}' <<<"${ADDRESS/@/}")"
+	longitude="$(awk -F',' '{print $2}' <<<"${ADDRESS}")"
 else
 	echo "Fetching coordinates for ${ADDRESS}..."
 	address_encoded="$(jq -rn --arg address "${ADDRESS}" '$address|@uri')"

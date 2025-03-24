@@ -102,10 +102,14 @@ while read -r fname <&3; do
 	timestamp="$(date -r "${fname}" "+%Y%m%d%H%M.%S")"
 
 	# perform the changes
-	exiftool -overwrite_original -wm cg -m \
+	exiftool -overwrite_original -m \
 		-GPSLatitude\*="${latitude}" \
+		-if 'not defined $GPSLatitude' \
 		-GPSLongitude\*="${longitude}" \
-		-GPSAltitude\*="${altitude}" "${fname}" &&
+		-if 'not defined $GPSLongitude' \
+		-GPSAltitude\*="${altitude}" \
+		-if 'not defined $GPSAltitude' \
+		"${fname}" && \
 		touch -c -a -m -t "${timestamp}" "${fname}"
 
 	# run hook

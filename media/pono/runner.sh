@@ -97,7 +97,7 @@ while read -r fname <&3; do
 	timestamp="$(date -r "${fname}" "+%Y%m%d%H%M.%S")"
 
 	# perform the changes
-	exiftool -overwrite_original -m \
+	exiftool -overwrite_original -wm cg -m \
 		-GPSLatitude\*="${latitude}" \
 		-GPSLongitude\*="${longitude}" \
 		-GPSAltitude\*="${altitude}" "${fname}" &&

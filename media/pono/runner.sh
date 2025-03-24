@@ -104,12 +104,12 @@ while read -r fname <&3; do
 	# perform the changes
 	exiftool -overwrite_original -m \
 		-GPSLatitude\*="${latitude}" \
-		-if 'not defined $GPSLatitude' \
+		-if "not defined \$GPSLatitude" \
 		-GPSLongitude\*="${longitude}" \
-		-if 'not defined $GPSLongitude' \
+		-if "not defined \$GPSLongitude" \
 		-GPSAltitude\*="${altitude}" \
-		-if 'not defined $GPSAltitude' \
-		"${fname}" && \
+		-if "not defined \$GPSAltitude" \
+		"${fname}" &&
 		touch -c -a -m -t "${timestamp}" "${fname}"
 
 	# run hook

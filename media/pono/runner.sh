@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") [-d/--dry-run] -a <address> [<path>...]"
+	echo -e "Usage:\n\t$(basename "$0") [-d/--dry-run] [--hook command] -a <address> [<path>...]"
 }
 
 # shell setup
@@ -13,6 +13,7 @@ set -euo pipefail
 # arguments parsing
 
 ADDRESS=""
+HOOK=""
 DRY_RUN=0
 TARGETS=()
 EXTS=(
@@ -42,6 +43,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	-a | --address)
 		ADDRESS="$2"
+		shift || echo -n
+		;;
+	--hook)
+		HOOK="$2"
 		shift || echo -n
 		;;
 	*)
@@ -102,6 +107,9 @@ while read -r fname <&3; do
 		-GPSLongitude\*="${longitude}" \
 		-GPSAltitude\*="${altitude}" "${fname}" &&
 		touch -c -a -m -t "${timestamp}" "${fname}"
+
+	# run hook
+	[ -z "${HOOK}" ] || "${HOOK}" "${fname}"
 done 3< <(
 	find "${TARGETS[@]}" -type f -not -name '.*' | grep -iE ".*.(${exts})$"
 )

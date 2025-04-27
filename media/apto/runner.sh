@@ -48,6 +48,7 @@ EXTS=(
 	3gp
 	arw
 	avi
+	dng
 	heic
 	jpeg
 	jpg

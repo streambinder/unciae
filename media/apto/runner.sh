@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run]"
+	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run] [--tz]"
 }
 
 function install_media_file() {
@@ -62,6 +62,7 @@ EXTS=(
 )
 UNKNOWN_DATE="$(date +'%Y:%m:%d %H:%M:%S')"
 TIME=""
+TZ="+2"
 
 _modes=0
 while [[ $# -gt 0 ]]; do
@@ -95,6 +96,10 @@ while [[ $# -gt 0 ]]; do
 		_modes="$((_modes + 1))"
 		shift || echo -n
 		;;
+	--tz)
+		TZ="$2"
+		shift || echo -n
+		;;
 	*)
 		TARGETS+=("$1")
 		;;
@@ -124,6 +129,19 @@ if [ "${MODE}" = "static" ]; then
 	TIME="${TIME:0:4}:${TIME:4:2}:${TIME:6:2} ${TIME:8:2}:${TIME:10:2}:${TIME:12:2}"
 	echo "Statically using time: ${TIME}"
 fi
+
+tz_sign="${TZ:0:1}"
+if [ "${tz_sign}" == "0" ]; then
+	tz_sign="+"
+	TZ="${tz_sign}${TZ}"
+fi
+if [ "${tz_sign}" != "-" ] && [ "${tz_sign}" != "+" ] && [ "${tz_sign}" != "0" ]; then
+	echo "Timezone sign must be explicit (${TZ}): exiting"
+	exit 1
+fi
+tz_hour="$(awk -F: '{print $1}' <<<"${TZ:1}" | xargs printf %02d)"
+tz_min="$(awk -F: '{print $2}' <<<"${TZ:1}" | rev | xargs printf %02d | rev)"
+TZ=${tz_sign}${tz_hour}:${tz_min}
 
 # effective script
 
@@ -207,11 +225,11 @@ while read -r fname <&3; do
 		exit 1
 	fi
 
-	echo "Chosen date for ${fname}: ${final_timestamp}"
+	echo "Chosen date for ${fname}: ${final_timestamp}${TZ}"
 	[ "${DRY_RUN}" = 1 ] && continue
 
 	# compute timestamp formats
-	final_exif_timestamp="${final_timestamp}"
+	final_exif_timestamp="${final_timestamp}${TZ}"
 	final_fs_timestamp="${final_timestamp//[!0-9]/}"
 	final_fs_timestamp="${final_fs_timestamp:0:12}.${final_fs_timestamp:12:2}"
 	final_ext="$(echo "${fname##*.}" | tr '[:upper:]' '[:lower:]' | sed 's/jpeg/jpg/')"

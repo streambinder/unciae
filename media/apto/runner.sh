@@ -139,8 +139,8 @@ if [ "${tz_sign}" != "-" ] && [ "${tz_sign}" != "+" ] && [ "${tz_sign}" != "0" ]
 	echo "Timezone sign must be explicit (${TZ}): exiting"
 	exit 1
 fi
-tz_hour="$(awk -F: '{print $1}' <<<"${TZ:1}" | xargs printf %02d)"
-tz_min="$(awk -F: '{print $2}' <<<"${TZ:1}" | rev | xargs printf %02d | rev)"
+tz_hour="$(awk -F: '{printf "%02d",$1}' <<<"${TZ:1}")"
+tz_min="$(awk -F: '{printf "%d00",$2}' <<<"${TZ:1}" | cut -c1-2)"
 TZ=${tz_sign}${tz_hour}:${tz_min}
 
 # effective script

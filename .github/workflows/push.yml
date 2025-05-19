@@ -1,27 +1,27 @@
 ---
 name: push
 
-on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+on: # yamllint disable-line rule:truthy
+  push: null
+  pull_request: null
 
 permissions:
+  actions: read
+  attestations: none
+  checks: none
   contents: read
+  deployments: none
+  id-token: none
+  issues: none
+  discussions: none
+  packages: read
+  pages: none
   pull-requests: read
+  repository-projects: none
+  security-events: none
   statuses: write
 
 jobs:
-  commitlint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: wagoid/commitlint-github-action@v5
   codespell:
     runs-on: ubuntu-latest
     steps:
@@ -35,14 +35,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: super-linter/super-linter@latest
+      - run: ln -sv .github/linters/commitlint.config.js ./
+      - uses: super-linter/super-linter/slim@v7.4.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_ACTIONS_UNCIAE }}
-          VALIDATE_ALL_CODEBASE: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: ${{ !contains(github.event_name, 'pull_request') }}
           VALIDATE_PYTHON_PYINK: false
           VALIDATE_GO: false
   notify:
-    needs: [commitlint, codespell, super-linter]
+    needs: [codespell, super-linter]
     if: >-
       success() &&
       github.event_name == 'push' &&
@@ -51,7 +52,7 @@ jobs:
     steps:
       - uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.GH_ACTIONS_UNCIAE }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           repository: streambinder/clavis
           event-type: unciae-sync
           client-payload: >-

@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/bogem/id3v2/v2"
 	"github.com/gosimple/slug"
 	"github.com/spf13/cobra"
+	"github.com/streambinder/id3v2-sylt"
 	"github.com/streambinder/spotitube/entity"
 	"github.com/streambinder/spotitube/entity/id3"
 	"github.com/streambinder/spotitube/lyrics"
@@ -56,7 +56,7 @@ func main() {
 				}
 				log.Printf("Lyrics: %s\n", util.Excerpt(uslt, 50))
 
-				tag.SetUnsynchronizedLyrics(title, uslt)
+				tag.SetLyrics(title, uslt)
 				if err := tag.Save(); err != nil {
 					return err
 				}

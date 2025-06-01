@@ -42,7 +42,7 @@ jobs:
           VALIDATE_ALL_CODEBASE: ${{ !contains(github.event_name, 'pull_request') }}
           VALIDATE_PYTHON_PYINK: false
           VALIDATE_GO: false
-  notify:
+  notify-clavis:
     needs: [codespell, super-linter]
     if: >-
       success() &&
@@ -54,6 +54,24 @@ jobs:
         with:
           token: ${{ secrets.REPOSITORY_DISPATCH_CLAVIS }}
           repository: streambinder/clavis
+          event-type: unciae-sync
+          client-payload: >-
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }
+  notify-imperium:
+    needs: [codespell, super-linter]
+    if: >-
+      success() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPOSITORY_DISPATCH_IMPERIUM }}
+          repository: streambinder/imperium
           event-type: unciae-sync
           client-payload: >-
             {

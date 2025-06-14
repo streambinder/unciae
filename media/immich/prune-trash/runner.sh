@@ -7,15 +7,15 @@ function human_size() {
 	echo "$@" | awk '{split("B KB MB GB TB PB EB ZB YB", v); s=1; while ($1>1024 && s<9) {$1/=1024; s++} printf "%.2f%s", $1, v[s]}'
 }
 
+# shellcheck disable=SC2068
 function curl_immich() {
 	endpoint="$1"
 	shift
 	curl -sL "${IMMICH_API_BASE:-http://localhost:2283}/api/${endpoint}" \
 		-H 'Content-Type: application/json' \
 		-H 'Accept: application/json' \
-		-H "x-api-key: ${IMMICH_API_KEY}"
-	# shellcheck disable=SC2068
-	$@
+		-H "x-api-key: ${IMMICH_API_KEY}" \
+		$@
 }
 
 echo "Deleting originals on disk..."

@@ -19,24 +19,29 @@ permissions:
   pull-requests: read
   repository-projects: none
   security-events: none
-  statuses: write
+  statuses: none
 
 jobs:
   codespell:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: codespell-project/actions-codespell@v2
+        with:
+          persist-credentials: false
+      - uses: codespell-project/actions-codespell@406322ec52dd7b488e48c1c4b82e2a8b3a1bf630
         with:
           check_filenames: true
   super-linter:
     runs-on: ubuntu-latest
+    permissions:
+      statuses: write
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
       - run: ln -sv .github/linters/commitlint.config.js ./
-      - uses: super-linter/super-linter/slim@v8.0.0
+      - uses: super-linter/super-linter/slim@5119dcd8011e92182ce8219d9e9efc82f16fddb6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_ALL_CODEBASE: ${{ !contains(github.event_name, 'pull_request') }}
@@ -50,7 +55,7 @@ jobs:
       github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - uses: peter-evans/repository-dispatch@v3
+      - uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0
         with:
           token: ${{ secrets.REPOSITORY_DISPATCH_CLAVIS }}
           repository: streambinder/clavis
@@ -68,7 +73,7 @@ jobs:
       github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - uses: peter-evans/repository-dispatch@v3
+      - uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0
         with:
           token: ${{ secrets.REPOSITORY_DISPATCH_IMPERIUM }}
           repository: streambinder/imperium

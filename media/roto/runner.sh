@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") [--dry-run] <90|180|270|flip|flop> [<path>...]"
+	echo -e "Usage:\n\t$(basename "$0") [--dry-run] [--encode] <90|180|270|flip|flop> [<path>...]"
 }
 
 # shell setup
@@ -15,6 +15,7 @@ set -euo pipefail
 HOOK=""
 TARGETS=()
 DRY_RUN=0
+ENCODE=0
 OP=""
 EXTS=(
 	3gp
@@ -41,6 +42,9 @@ while [[ $# -gt 0 ]]; do
 		;;
 	-d | --dry-run)
 		DRY_RUN=1
+		;;
+	-e | --encode)
+		ENCODE=1
 		;;
 	--hook)
 		HOOK="$2"
@@ -78,31 +82,36 @@ while read -r fname <&3; do
 	basename="$(basename "${fname}")"
 	echo "Processing ${basename}..."
 
-	# gather media file type
-	mime_type=$(file --mime-type -b "${fname}")
-	if [[ "${mime_type}" == image/* ]]; then
-		if [[ "${OP}" =~ ^[0-9]+$ ]]; then
-			mogrify_op="-rotate ${OP}"
+	# dry-run check
+	if [ "${ENCODE}" = 1 ]; then
+		# gather media file type
+		mime_type=$(file --mime-type -b "${fname}")
+		if [[ "${mime_type}" == image/* ]]; then
+			if [[ "${OP}" =~ ^[0-9]+$ ]]; then
+				mogrify_op="-rotate ${OP}"
+			else
+				mogrify_op="${OP}"
+			fi
+			rotator="mogrify ${mogrify_op} ${fname}"
+		elif [[ "${mime_type}" == video/* ]] || [[ "${mime_type}" == */octet-stream ]]; then
+			if [[ "${OP}" == "90" ]]; then
+				ffmpeg_op="-vf 'transpose=1'"
+			elif [[ "${OP}" == "180" ]]; then
+				ffmpeg_op="-vf 'transpose=2,transpose=2'"
+			elif [[ "${OP}" == "270" ]]; then
+				ffmpeg_op="-vf 'transpose=2'"
+			elif [[ "${OP}" == "flip" ]]; then
+				ffmpeg_op="-vf vflip"
+			else
+				ffmpeg_op="-vf hflip"
+			fi
+			rotator="ffmpeg -i ${fname} ${ffmpeg_op} /tmp/${basename} && mv -vf /tmp/${basename} ${fname}"
 		else
-			mogrify_op="${OP}"
+			echo "${fname} has unknown type: skipping"
+			continue
 		fi
-		rotator="mogrify ${mogrify_op} ${fname}"
-	elif [[ "${mime_type}" == video/* ]] || [[ "${mime_type}" == */octet-stream ]]; then
-		if [[ "${OP}" == "90" ]]; then
-			ffmpeg_op="-vf 'transpose=1'"
-		elif [[ "${OP}" == "180" ]]; then
-			ffmpeg_op="-vf 'transpose=2,transpose=2'"
-		elif [[ "${OP}" == "270" ]]; then
-			ffmpeg_op="-vf 'transpose=2'"
-		elif [[ "${OP}" == "flip" ]]; then
-			ffmpeg_op="-vf vflip"
-		else
-			ffmpeg_op="-vf hflip"
-		fi
-		rotator="ffmpeg -i ${fname} ${ffmpeg_op} /tmp/${basename} && mv -vf /tmp/${basename} ${fname}"
 	else
-		echo "${fname} has unknown type: skipping"
-		continue
+		rotator="exiftool -rotation=${OP} -overwrite_original -m ${fname}"
 	fi
 
 	# dry-run check

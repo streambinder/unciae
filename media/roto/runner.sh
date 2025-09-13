@@ -87,7 +87,7 @@ while read -r fname <&3; do
 			mogrify_op="${OP}"
 		fi
 		rotator="mogrify ${mogrify_op} ${fname}"
-	elif [[ "${mime_type}" == video/* ]]; then
+	elif [[ "${mime_type}" == video/* ]] || [[ "${mime_type}" == */octet-stream ]]; then
 		if [[ "${OP}" == "90" ]]; then
 			ffmpeg_op="-vf 'transpose=1'"
 		elif [[ "${OP}" == "180" ]]; then

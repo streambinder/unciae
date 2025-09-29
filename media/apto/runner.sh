@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run] [--tz]"
+	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run] [--tz] [--skip-compliant] [--skip-failures]"
 }
 
 function install_media_file() {
@@ -43,6 +43,8 @@ set -euo pipefail
 
 MODE=interactive
 DRY_RUN=0
+SKIP_COMPLIANT=0
+SKIP_FAILURES=0
 TARGETS=()
 EXTS=(
 	3gp
@@ -73,6 +75,12 @@ while [[ $# -gt 0 ]]; do
 		;;
 	-d | --dry-run)
 		DRY_RUN=1
+		;;
+	--skip-compliant)
+		SKIP_COMPLIANT=1
+		;;
+	--skip-failures)
+		SKIP_FAILURES=1
 		;;
 	-e | --exif)
 		MODE=exif
@@ -150,6 +158,12 @@ exts="${exts// /|}"
 while read -r fname <&3; do
 	dirname="$(dirname "${fname}")"
 	basename="$(basename "${fname}")"
+	stem="${basename%.*}"
+
+	if [[ "${stem}" =~ ^[0-9]{8}\-[0-2]{1}[0-9]{1}[0-5]{1}[0-9]{1}[0-5]{1}[0-9]{1}$ ]] && [ "${SKIP_COMPLIANT}" = 1 ]; then
+		echo "${basename} is already compliant, skipping..."
+		continue
+	fi
 	echo "Processing ${basename}..."
 
 	final_timestamp="${TIME}"
@@ -178,7 +192,11 @@ while read -r fname <&3; do
 			fi
 			if [ "${oldest}" = "${UNKNOWN_DATE//[!0-9]/}" ]; then
 				echo "Can't infer best timestamp to use for ${basename}: exiting"
-				exit 1
+				if [ "${SKIP_FAILURES}" = 1 ]; then
+					continue
+				else
+					exit 1
+				fi
 			fi
 		elif [ "${MODE}" = "interactive" ]; then
 			# in interactive mode, let's ask the user
@@ -222,7 +240,11 @@ while read -r fname <&3; do
 	# reject if we aren't able to compute the right timestamp
 	if [ "${final_timestamp}" = "${UNKNOWN_DATE}" ]; then
 		echo "Can't compute the right best timestamp to use for ${basename}: exiting"
-		exit 1
+		if [ "${SKIP_FAILURES}" = 1 ]; then
+			continue
+		else
+			exit 1
+		fi
 	fi
 
 	echo "Chosen date for ${fname}: ${final_timestamp}${TZ}"

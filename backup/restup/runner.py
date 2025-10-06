@@ -27,9 +27,7 @@ class Restup:
         for t in self.tasks:
             for mandatory_token in ["repository", "password", "path"]:
                 if mandatory_token not in t or t[mandatory_token] is None:
-                    raise RuntimeError(
-                        f"{mandatory_token} key is mandatory for a task object"
-                    )
+                    raise RuntimeError(f"{mandatory_token} key is mandatory for a task object")
             for recommended_token in ["retention"]:
                 if recommended_token not in t or t[recommended_token] is None:
                     print(
@@ -41,9 +39,7 @@ class Restup:
             path_checks += ["postspawn"] if "postspawn" in t else []
             for path_entry in path_checks:
                 if not os.path.exists(t[path_entry]):
-                    raise RuntimeError(
-                        f"{path_entry} path {t[path_entry]} does not exist"
-                    )
+                    raise RuntimeError(f"{path_entry} path {t[path_entry]} does not exist")
 
     def __wait(self):
         for thread in self.__threads:
@@ -72,9 +68,7 @@ class Restup:
         if "regexes" in task:
             for regex in task["regexes"]:
                 regexes += ["--iexclude", regex]
-        with subprocess.Popen(
-            ["echo", task["password"]], stdout=subprocess.PIPE
-        ) as pipe_auth:
+        with subprocess.Popen(["echo", task["password"]], stdout=subprocess.PIPE) as pipe_auth:
             with subprocess.Popen(
                 [
                     "restic",
@@ -109,9 +103,7 @@ class Restup:
 
         if "retention" in task:
             self.__t_print(f"Enforcing {task['retention']} retention...")
-            with subprocess.Popen(
-                ["echo", task["password"]], stdout=subprocess.PIPE
-            ) as pipe_auth:
+            with subprocess.Popen(["echo", task["password"]], stdout=subprocess.PIPE) as pipe_auth:
                 with subprocess.Popen(
                     [
                         "restic",
@@ -128,8 +120,7 @@ class Restup:
                     pipe_out, pipe_err = pipe_restic.communicate()
                     if pipe_err is not None:
                         self.__t_print(
-                            f"Unable to apply retention on {task['respository']} repository: "
-                            + pipe_err,
+                            f"Unable to apply retention on {task['respository']} repository: " + pipe_err,
                             file=sys.stderr,
                         )
                         return

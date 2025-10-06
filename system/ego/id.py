@@ -35,9 +35,7 @@ async def keepass(payload: str, secret: str) -> Union[Tuple[str, str], None]:
     return None
 
 
-async def gen(
-    payload: str, secret: str, iteration: int, length: int
-) -> Tuple[str, str]:
+async def gen(payload: str, secret: str, iteration: int, length: int) -> Tuple[str, str]:
     raw = f"{payload}@{secret}{str('+') * (iteration - 1)}"
     hashsum = f"#{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
     return ("", capitalize_alpha(hashsum[:length]))
@@ -49,13 +47,9 @@ async def gen(
 @click.option("-i", "--iteration", type=int, default=1)
 @click.option("-l", "--length", type=int, default=16)
 @click.option("-g", "--generate", is_flag=True, default=False)
-async def cmd_id(
-    payload: str, username: bool, iteration: int, length: int, generate: bool
-):
+async def cmd_id(payload: str, username: bool, iteration: int, length: int, generate: bool):
     if iteration > 1:
         generate = True
     secret = getpass.getpass()
-    data = (await keepass(payload, secret) if not generate else None) or await gen(
-        payload, secret, iteration, length
-    )
+    data = (await keepass(payload, secret) if not generate else None) or await gen(payload, secret, iteration, length)
     pyperclip.copy(data[0] if username else data[1])

@@ -28,9 +28,7 @@ SHELL_COLORS = [
 
 
 def color_by_name(keyword: str) -> str:
-    return SHELL_COLORS[
-        sum(hashlib.md5(keyword.encode()).hexdigest().encode()) % len(SHELL_COLORS)
-    ]
+    return SHELL_COLORS[sum(hashlib.md5(keyword.encode()).hexdigest().encode()) % len(SHELL_COLORS)]
 
 
 def only_once(func):

@@ -191,11 +191,7 @@ while read -r fname <&3; do
 			fi
 			if [ "${oldest}" = "${UNKNOWN_DATE//[!0-9]/}" ]; then
 				echo "Can't infer best timestamp to use for ${basename}: exiting"
-				if [ "${SKIP_FAILURES}" = 1 ]; then
-					continue
-				else
-					exit 1
-				fi
+				[ "${SKIP_FAILURES}" = 1 ] && continue || exit 1
 			fi
 		elif [ "${MODE}" = "interactive" ]; then
 			# in interactive mode, let's ask the user
@@ -239,11 +235,7 @@ while read -r fname <&3; do
 	# reject if we aren't able to compute the right timestamp
 	if [ "${final_timestamp}" = "${UNKNOWN_DATE}" ]; then
 		echo "Can't compute the right best timestamp to use for ${basename}: exiting"
-		if [ "${SKIP_FAILURES}" = 1 ]; then
-			continue
-		else
-			exit 1
-		fi
+		[ "${SKIP_FAILURES}" = 1 ] && continue || exit 1
 	fi
 
 	echo "Chosen date for ${fname}: ${final_timestamp}${TZ}"

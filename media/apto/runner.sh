@@ -151,6 +151,11 @@ tz_hour="$(awk -F: '{printf "%02d",$1}' <<<"${TZ:1}")"
 tz_min="$(awk -F: '{printf "%d00",$2}' <<<"${TZ:1}" | cut -c1-2)"
 TZ=${tz_sign}${tz_hour}:${tz_min}
 
+RE_EXCLUDE='!'
+if [ "${SKIP_COMPLIANT}" = 1 ]; then
+	RE_EXCLUDE=".*[0-9]{8}\-[0-2]{1}[0-9]{1}[0-5]{1}[0-9]{1}[0-5]{1}[0-9]{1}\..*"
+fi
+
 # effective script
 
 exts="${EXTS[*]}"
@@ -158,12 +163,6 @@ exts="${exts// /|}"
 while read -r fname <&3; do
 	dirname="$(dirname "${fname}")"
 	basename="$(basename "${fname}")"
-	stem="${basename%.*}"
-
-	if [[ "${stem}" =~ ^[0-9]{8}\-[0-2]{1}[0-9]{1}[0-5]{1}[0-9]{1}[0-5]{1}[0-9]{1}$ ]] && [ "${SKIP_COMPLIANT}" = 1 ]; then
-		echo "${basename} is already compliant, skipping..."
-		continue
-	fi
 	echo "Processing ${basename}..."
 
 	final_timestamp="${TIME}"
@@ -270,5 +269,5 @@ while read -r fname <&3; do
 		chmod 0644 "${fname}" &&
 		install_media_file "${fname}" "${dirname}/${final_fname}"
 done 3< <(
-	find "${TARGETS[@]}" -type f -not -name '.*' | grep -iE ".*.(${exts})$"
+	find "${TARGETS[@]}" -type f -not -name '.*' -regextype posix-egrep -not -regex "${RE_EXCLUDE}" | grep -iE ".*.(${exts})$"
 )

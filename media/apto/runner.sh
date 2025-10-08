@@ -26,7 +26,7 @@ function install_media_file() {
 			mins="$((10#${mins} + 1))"
 			secs=0
 		fi
-		dst_base="${dst_base:0:11}$(printf %02d "${mins}")$(printf %02d "${secs}").${dst_base##*.}"
+		dst_base="${dst_base:0:11}$(printf %02d "$((10#${mins}))")$(printf %02d "$((10#${secs}))").${dst_base##*.}"
 		# don't if we already have a file in the right position
 		[ "${src}" == "${dst_dir}/${dst_base}" ] && return 0
 	done

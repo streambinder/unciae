@@ -1,8 +1,5 @@
 anyio
 asyncio
 asyncclick
-cffi
-pykeepass
-pyperclip
 setuptools
 termcolor

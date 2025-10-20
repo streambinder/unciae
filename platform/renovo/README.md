@@ -1,6 +1,6 @@
-# Ego
+# Renovo
 
-Ego is a personal workstation (either desktop or laptop) maintenance tool.
+Renovo is a personal workstation (either desktop or laptop) maintenance tool.
 
 ## How to use
 

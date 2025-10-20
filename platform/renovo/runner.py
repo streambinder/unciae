@@ -9,6 +9,7 @@ import shutil
 from getpass import getpass
 from typing import Any, AsyncGenerator, List, Optional, Tuple
 
+import anyio
 import asyncclick as click
 from termcolor import colored
 
@@ -185,8 +186,12 @@ async def nix() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["nix-env", "-u", "*"], {}
 
 
-@click.command(name="up")
-async def cmd_up():
+@click.command()
+async def renovo():
     async with asyncio.TaskGroup() as upgrades:
         for fn in DEP_FNS:
             upgrades.create_task(fn())
+
+
+if __name__ == "__main__":
+    anyio.run(renovo.main)

@@ -49,6 +49,7 @@ jobs:
           VALIDATE_PYTHON_BLACK: false
           VALIDATE_PYTHON_PYLINT: false
           VALIDATE_GO: false
+          FILTER_REGEX_EXCLUDE: .*(.mypy_cache|__pycache__|\.venv|venv)/.*
   notify-clavis:
     needs: [codespell, super-linter]
     if: >-

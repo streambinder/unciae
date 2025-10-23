@@ -74,6 +74,16 @@ def print_line(program: str, line: str, color: Optional[str] = None) -> None:
     )
 
 
+async def spawn(*args, **kwargs) -> asyncio.subprocess.Process:
+    return await asyncio.create_subprocess_exec(
+        *args,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        **kwargs,
+    )
+
+
 async def print_stream(stream, program, color: Optional[str] = None) -> None:
     while line := await stream.readline():
         print_line(program, line.decode().rstrip(), color)
@@ -108,23 +118,15 @@ def dep(
 
             print_line(program, "upgrading...")
             async for p_args, p_kwargs in func(*args, **kwargs):
-                sudo = p_args[0] == "sudo"
-                if sudo:
-                    get_pass(program)
+                if sudo := p_args[0] == "sudo":
                     p_args.insert(1, "-S")
 
-                process = await asyncio.create_subprocess_exec(
-                    *p_args,
-                    stdin=asyncio.subprocess.PIPE if sudo else None,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    **p_kwargs,
-                )
-                await asyncio.gather(
-                    write_stdin(process.stdin if sudo else None),
-                    print_stream(process.stdout, program),
-                    print_stream(process.stderr, program, "red"),
-                )
+                if process := await spawn(*p_args, **p_kwargs):
+                    await asyncio.gather(
+                        write_stdin(process.stdin if sudo else None),
+                        print_stream(process.stdout, program),
+                        print_stream(process.stderr, program, "red"),
+                    )
 
             print_line(program, "upgrade complete.")
 
@@ -186,8 +188,34 @@ async def nix() -> AsyncGenerator[Tuple[list, dict], None]:
     yield ["nix-env", "-u", "*"], {}
 
 
+async def is_sudo_required() -> bool:
+    for fn in DEP_FNS:
+        async for p_args, _ in fn.__wrapped__():
+            if p_args and p_args[0] == "sudo":
+                return True
+    return False
+
+
+async def sudo() -> None:
+    if await is_sudo_required():
+
+        async def raise_on_auth_error(stream) -> None:
+            while line := await stream.readline():
+                if "incorrect password" in line.decode().rstrip().lower():
+                    raise click.ClickException("Authentication failed. Please try again.")
+
+        if process := await spawn("sudo", "-S", "echo", "-n"):
+            await asyncio.gather(
+                write_stdin(process.stdin),
+                raise_on_auth_error(process.stderr),
+            )
+
+
 @click.command()
 async def renovo():
+    if await is_sudo_required():
+        await sudo()
+
     async with asyncio.TaskGroup() as upgrades:
         for fn in DEP_FNS:
             upgrades.create_task(fn())

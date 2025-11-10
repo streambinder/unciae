@@ -40,7 +40,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: mv -vf .github/linters/* ./
+      - run: mv -vf .github/linters/biome.json .github/linters/commitlint.config.js ./
       - uses: super-linter/super-linter/slim@2bdd90ed3262e023ac84bf8fe35dc480721fc1f2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -261,5 +261,9 @@ while read -r fname <&3; do
 		chmod 0644 "${fname}" &&
 		install_media_file "${fname}" "${dirname}/${final_fname}"
 done 3< <(
-	find "${TARGETS[@]}" -type f -not -name '.*' -regextype posix-egrep -not -regex "${RE_EXCLUDE}" | grep -iE ".*.(${exts})$"
+	if [[ "${OSTYPE}" == "darwin"* ]]; then
+		find -E "${TARGETS[@]}" -type f -not -name '.*' -not -regex "${RE_EXCLUDE}" | grep -iE ".*.(${exts})$"
+	else
+		find "${TARGETS[@]}" -type f -not -name '.*' -regextype posix-egrep -not -regex "${RE_EXCLUDE}" | grep -iE ".*.(${exts})$"
+	fi
 )

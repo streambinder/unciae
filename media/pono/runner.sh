@@ -103,13 +103,10 @@ while read -r fname <&3; do
 	timestamp="$(date -r "${fname}" "+%Y%m%d%H%M.%S")"
 
 	# perform the changes
-	exiftool -overwrite_original -m \
+	exiftool -overwrite_original -m -wm cg \
 		-GPSLatitude\*="${latitude}" \
-		-if "not defined \$GPSLatitude" \
 		-GPSLongitude\*="${longitude}" \
-		-if "not defined \$GPSLongitude" \
 		-GPSAltitude\*="${altitude}" \
-		-if "not defined \$GPSAltitude" \
 		"${fname}" &&
 		touch -c -a -m -t "${timestamp}" "${fname}"
 

@@ -1,7 +1,0 @@
-[Unit]
-Description=Go Daddy dynamic-DNS record flusher service
-
-[Service]
-Type=simple
-EnvironmentFile=/etc/default/ddaddy
-ExecStart=ddaddy ${RECORD}

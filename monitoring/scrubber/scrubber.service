@@ -1,7 +1,0 @@
-[Unit]
-Description=BTRFS scrub service
-
-[Service]
-Type=oneshot
-EnvironmentFile=/etc/default/scrubber
-ExecStart=scrubber ${DEVICES} -c ${CONTACT}

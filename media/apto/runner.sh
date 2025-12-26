@@ -250,7 +250,8 @@ while read -r fname <&3; do
 	final_fname="${final_fname/ /-}"
 
 	# perform the changes
-	exiftool -overwrite_original -m -trailer= -wm w \
+	[[ "${final_ext}" != "jpg" ]] || exiftool -overwrite_original -m -trailer= "${fname}"
+	exiftool -overwrite_original -m -wm w \
 		-time:all="${final_exif_timestamp}" "${fname}" &&
 		exiftool -overwrite_original -m \
 			-CreateDate="${final_exif_timestamp}" \

@@ -66,7 +66,7 @@ blocked_json="$(find "${TARGET}" -name blocked_profiles.json)"
 [ -z "${blocked_json}" ] && rprint "Unable to locate blocked_profiles.json file: ignoring blocked accounts..."
 
 rprint "Computing following accounts set from file..."
-following="$(jq -r '.relationships_following[].string_list_data[].value' <"${following_json}" | sort -u)"
+following="$(jq -r '.relationships_following[].title' <"${following_json}" | sort -u)"
 
 rprint "Computing followers accounts set from file..."
 followers="$(jq -r '.[].string_list_data[].value' <"${followers_json}" | sort -u)"

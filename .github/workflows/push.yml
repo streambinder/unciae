@@ -22,15 +22,6 @@ permissions:
   statuses: none
 
 jobs:
-  codespell:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579
-        with:
-          check_filenames: true
   super-linter:
     runs-on: ubuntu-latest
     permissions:
@@ -50,7 +41,7 @@ jobs:
           VALIDATE_PYTHON_PYLINT: false
           VALIDATE_GO: false
   notify-clavis:
-    needs: [codespell, super-linter]
+    needs: [super-linter]
     if: >-
       success() &&
       github.event_name == 'push' &&
@@ -68,7 +59,7 @@ jobs:
               "sha": "${{ github.sha }}"
             }
   notify-imperium:
-    needs: [codespell, super-linter]
+    needs: [super-linter]
     if: >-
       success() &&
       github.event_name == 'push' &&

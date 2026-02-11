@@ -1,7 +1,18 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/"
+    directory: "/audio/pluffer"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    open-pull-requests-limit: 25
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "gomod"
+    directory: "/audio/inflarics"
     schedule:
       interval: "weekly"
     allow:
@@ -12,20 +23,13 @@ updates:
       default-days: 7
 
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/platform/renovo"
     schedule:
       interval: "weekly"
     cooldown:
       default-days: 7
 
   - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
-
-  - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"

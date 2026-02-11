@@ -6,7 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/gosimple/slug v1.15.0
-	github.com/spf13/cobra v1.9.1
+	github.com/spf13/cobra v1.10.2
 	github.com/streambinder/id3v2-sylt v0.0.0-20250518085742-fbdd8d5d8b8b
 	github.com/streambinder/spotitube v1.1.1
 )

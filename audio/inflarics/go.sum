@@ -40,8 +40,9 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/spf13/cobra v1.9.1 h1:CXSaggrXdbHK9CF+8ywj8Amf7PBRmPCOJugH954Nnlo=
 github.com/spf13/cobra v1.9.1/go.mod h1:nDyEzZ8ogv936Cinf6g1RU9MRY64Ir93oCnqb9wxYW0=
-github.com/spf13/pflag v1.0.6 h1:jFzHGLGAlb3ruxLB8MhbI6A8+AQX/2eW4qeyNZXNp2o=
 github.com/spf13/pflag v1.0.6/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
+github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/streambinder/id3v2-sylt v0.0.0-20250518085742-fbdd8d5d8b8b h1:s9SGT03iwIMQgl4Nz5xxzxHFMaM5qD1pWpNIk81b8n8=
 github.com/streambinder/id3v2-sylt v0.0.0-20250518085742-fbdd8d5d8b8b/go.mod h1:AKMff4RZxmWIYi2rfHG63l2I5JgimOQgImFUfWVx0mg=
 github.com/streambinder/spotitube v1.1.1 h1:ZcDSMAMrZRHqLbs2ZtDgzTMk2+Xi6F5+bjvQymPXbMo=

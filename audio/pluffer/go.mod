@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.25.8
 
 require (
-	github.com/streambinder/spotitube v1.1.4
+	github.com/streambinder/spotitube v1.1.5-0.20260410080028-c036a9eb1db6
 	github.com/zmb3/spotify/v2 v2.4.3
 )
 

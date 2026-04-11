@@ -12,7 +12,6 @@ import (
 	"github.com/gosimple/slug"
 	"github.com/spf13/cobra"
 	"github.com/streambinder/spotitube/entity"
-	"github.com/streambinder/spotitube/entity/id3"
 	"github.com/streambinder/spotitube/lyrics"
 	"github.com/streambinder/spotitube/sys"
 )
@@ -26,7 +25,7 @@ func main() {
 			var uslt = getStdin()
 			for _, path := range args {
 				log.Printf("Processing %s...\n", path)
-				tag, tagErr := id3.Open(path, id3v2.Options{Parse: true})
+				tag, tagErr := openTag(path, id3v2.Options{Parse: true})
 				if tagErr != nil {
 					return tagErr
 				}
@@ -96,7 +95,7 @@ func getStdin() string {
 	}
 }
 
-func getLyrics(artist, title, url string, tag *id3.Tag) (string, error) {
+func getLyrics(artist, title, url string, tag *tag) (string, error) {
 	if len(url) == 0 {
 		log.Printf("Searching lyrics for %s by %s...\n", title, artist)
 		return lyrics.Search(&entity.Track{ID: sys.Fallback(tag.SpotifyID(), fakeID(artist, title)), Title: title, Artists: []string{artist}})

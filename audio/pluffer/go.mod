@@ -17,5 +17,5 @@ require (
 	github.com/gosimple/unidecode v1.0.1 // indirect
 	github.com/thanhpk/randstr v1.0.6 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 )

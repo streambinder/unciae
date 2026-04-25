@@ -134,8 +134,8 @@ github.com/smarty/assertions v1.16.0 h1:EvHNkdRA4QHMrn75NZSoUQ/mAUXAYWfatfB01yTC
 github.com/smarty/assertions v1.16.0/go.mod h1:duaaFdCS0K9dnoM50iyek/eYINOZ64gbh1Xlf6LG7AI=
 github.com/smartystreets/goconvey v1.8.1 h1:qGjIddxOk4grTu9JPOU31tVfq3cNdBlNa5sSznIX1xY=
 github.com/smartystreets/goconvey v1.8.1/go.mod h1:+/u4qLyY6x1jReYOp7GOM2FSt8aP9CzCZL03bI28W60=
-github.com/streambinder/spotitube v1.1.5-0.20260410080028-c036a9eb1db6 h1:29ND3gkVIjwFRmaqSJP52ajG+eZ78wQbEVgUQhiua8g=
-github.com/streambinder/spotitube v1.1.5-0.20260410080028-c036a9eb1db6/go.mod h1:KHspRDfxZkkgAI6Jj//a0xJ4qOQeYWJ9Gk1XUXmmBnc=
+github.com/streambinder/spotitube v1.1.7 h1:bEYzbjG3WJj1fj9eQxXo12r7K1YN6JR3FSjHx/AgEvw=
+github.com/streambinder/spotitube v1.1.7/go.mod h1:lEQablpE1M43/ViI0wheooiCpOuWOoVHtbp+KbCFGaA=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=

@@ -88,7 +88,11 @@ else
 	longitude="$(jq -r '.[0].lon' <<<"${osm_data}")"
 fi
 
-altitude=$(curl -s "https://api.open-elevation.com/api/v1/lookup?locations=${latitude},${longitude}" | jq -r '.results[0].elevation')
+altitude="$(curl -sf "https://api.open-meteo.com/v1/elevation?latitude=${latitude}&longitude=${longitude}" | jq -r '.elevation[0]')"
+if [ -z "${altitude}" ] || [ "${altitude}" = "null" ]; then
+	echo "Failed to fetch altitude."
+	exit 1
+fi
 echo "Found ${name}: lat ${latitude}, lon ${longitude}, alt ${altitude}"
 
 [ "${DRY_RUN}" = 1 ] && exit 0

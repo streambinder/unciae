@@ -184,6 +184,11 @@ Defaults: weekly schedule, grouped minor/patch updates per ecosystem to reduce P
 
 - **Conventional Commits everywhere**: `type(scope): subject`. Types: `feat|fix|refactor|chore|docs|test|ci|perf|build`.
 - Subject ≤72 chars, imperative mood, no trailing period.
+- **Subject = single plain phrase.** No punctuation other than the leading `type(scope):` separator. No parentheses, brackets, quotes, backticks, slashes, commas, semicolons, colons, em-dashes, or symbols inside the subject. No lists, no "X and Y / Z" enumerations — split into separate commits or use the body. Plain prose only.
+  - Bad: `fix(api): handle (nil) responses, retry on 5xx`
+  - Bad: `docs(ai): §3.2 added + §7/§20 updates`
+  - Good: `fix(api): handle nil responses on retry`
+  - Good: `docs(ai): consolidate linter configs under github linters`
 - **Body: very very concise.** One short paragraph max. Skip body if subject is self-explanatory. Skip "what" — diff shows it. Only "why" if non-obvious.
 - **Body line length ≤100 chars.** Matches `commitlint` `body-max-line-length` default. Hard-wrap longer lines. Includes URLs — break or shorten.
 - One logical change per commit. No "misc fixes".
@@ -370,6 +375,7 @@ When auditing repositories, look for:
 - Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical antipattern.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.
+- Commit subjects with punctuation/symbols beyond the `type(scope):` separator — parentheses, brackets, slashes, quotes, backticks, em-dashes, lists, multi-clause "X and Y" enumerations (§7).
 - Verbose commit bodies restating the diff.
 - Commit body lines >100 chars (commitlint `body-max-line-length` default).
 - Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.2).

@@ -229,6 +229,30 @@ Rules:
 - Other workflows allowed when single-purpose and orthogonal: `dependabot-auto-merge.yml`, `codeql.yml`, scheduled scans, `workflow_dispatch`-only ops, etc.
 - Reusable logic via `workflow_call` / composite actions (§5), not duplicate top-level workflows.
 
+### 11.1 Artifact Publishing — Never on Pull Requests
+
+**Publishing steps must never run on `pull_request` events.** PR runs validate (lint, build, test); they do not push artifacts, images, packages, or releases. Forks can open PRs from untrusted code — running publish steps would leak credentials and pollute registries with unreviewed artifacts.
+
+Publishing covers, non-exhaustive:
+
+- `docker push` / registry login + push (GHCR, Docker Hub, ECR, GAR, etc.)
+- `npm publish`, `cargo publish`, `pip` / `twine upload`, `pub publish`, `gem push`, `mvn deploy`
+- `gh release create` / `softprops/action-gh-release` / equivalent
+- `git push` of tags, generated artifacts, or pages branches
+- `terraform apply`, `kubectl apply`, deployment hooks, webhook notifications to prod systems
+- Uploading binaries to S3/GCS/object storage outside ephemeral cache scope
+
+Rules:
+
+- Gate every publish job/step with an event check. Examples (any equivalent works):
+  - Job-level: `if: github.event_name != 'pull_request'`
+  - On `tag.yml`: trigger only `on: push: tags: ['v*']` — no `pull_request`.
+  - On `push.yml`: gate publish job with `if: github.event_name == 'push' && github.ref == 'refs/heads/master'`.
+- Build/test steps stay unconditional (PRs must validate the same artifact path that ships).
+- Never use `pull_request_target` to bypass this — that runs with write tokens against untrusted PR code (the exact failure mode this rule prevents).
+- Secrets needed for publishing (`secrets.REGISTRY_TOKEN`, etc.) must never be referenced inside steps reachable from a `pull_request` trigger.
+- Dry-run / build-only validation on PRs is encouraged: build the image, don't push; pack the package, don't publish.
+
 ---
 
 ## 12. Readme Convention
@@ -330,6 +354,7 @@ When auditing repositories, look for:
 - Multiple competing formatters configured per language in same repository (e.g. both `black` and `ruff format`, or both `prettier` and `biome`).
 - CI workflows without `paths-filter` despite multi-component layout.
 - Hardcoded versions/tags/image names in workflows, or `env` aliases re-aliasing exposed `${{ github.* }}` context.
+- Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical anti-pattern.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.
 - Verbose commit bodies restating the diff.

@@ -59,6 +59,18 @@ Rules:
 - One canonical formatter per language per repository. Don't mix `black` and `ruff format`, or `prettier` and `biome`, in the same repository.
 - If a repository pins a different choice (per-repository `CLAUDE.md` / config), respect it — flag the divergence, don't auto-switch.
 
+### 3.2 Linter / Formatter Config Location
+
+**All super-linter-consumed config files live under `.github/linters/`.** Single dedicated dir keeps repository root clean (§2) and groups CI tooling.
+
+- Native super-linter location — picked up automatically (`LINTER_RULES_PATH` defaults to `.github/linters`). Examples: `.golangci.yml`, `.eslintrc*`, `.markdown-lint.yml`, `.python-lint`, `.ruff.toml`, `biome.json`, `.codespellrc`, `trivy.yaml`, `.mypy.ini`.
+- **Tools that demand config at repository root** (refuse to discover under `.github/linters/`): keep canonical file in `.github/linters/`, **symlink it from root**. Single source of truth, root stays advisory only.
+  - Common offenders: `commitlint` (`commitlint.config.js`), `biome` (`biome.json` when invoked as standalone CLI), some IDE-driven tools.
+  - Symlink pattern: `ln -sf .github/linters/commitlint.config.js commitlint.config.js`.
+  - Alternative when symlinks clash with platform / CI: workflow-level `mv` step (existing pattern — `mv -vf .github/linters/biome.json .github/linters/commitlint.config.js ./`). Symlink preferred — survives outside CI; `mv` only when symlinks confuse the tool.
+- **Never** scatter linter configs across repository root or per-language subdirs when super-linter consumes them. One discovery path; if a tool can't be persuaded to look there, symlink — don't duplicate.
+- Per-repository overrides allowed; document why in workflow comment per §3.
+
 ---
 
 ## 4. CI — paths-filter for Selective Jobs
@@ -173,6 +185,7 @@ Defaults: weekly schedule, grouped minor/patch updates per ecosystem to reduce P
 - **Conventional Commits everywhere**: `type(scope): subject`. Types: `feat|fix|refactor|chore|docs|test|ci|perf|build`.
 - Subject ≤72 chars, imperative mood, no trailing period.
 - **Body: very very concise.** One short paragraph max. Skip body if subject is self-explanatory. Skip "what" — diff shows it. Only "why" if non-obvious.
+- **Body line length ≤100 chars.** Matches `commitlint` `body-max-line-length` default. Hard-wrap longer lines. Includes URLs — break or shorten.
 - One logical change per commit. No "misc fixes".
 - PR title = top commit subject.
 - Per-repository `commitlint` config aligned with above (suggest adding if missing).
@@ -358,6 +371,8 @@ When auditing repositories, look for:
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.
 - Verbose commit bodies restating the diff.
+- Commit body lines >100 chars (commitlint `body-max-line-length` default).
+- Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.2).
 - Lockfiles committed (except `go.sum`).
 - Coverage <100% on unit tests.
 - Presence of `CHANGELOG.md` (should not exist).

@@ -354,7 +354,7 @@ When auditing repositories, look for:
 - Multiple competing formatters configured per language in same repository (e.g. both `black` and `ruff format`, or both `prettier` and `biome`).
 - CI workflows without `paths-filter` despite multi-component layout.
 - Hardcoded versions/tags/image names in workflows, or `env` aliases re-aliasing exposed `${{ github.* }}` context.
-- Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical anti-pattern.
+- Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical antipattern.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.
 - Verbose commit bodies restating the diff.

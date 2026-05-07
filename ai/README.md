@@ -163,11 +163,11 @@ jobs:
 
 ### 5.1 Docker Image Names — Derive From `github` Context
 
-Docker image references in workflows (build tags, push targets, `images:` inputs to `docker/metadata-action`, etc.) **must derive owner and repository from `${{ github.repository }}`** (or `${{ github.repository_owner }}` when only the owner is needed). Never hardcode `owner/repo` literals.
+Docker image references in workflows (build tags, push targets, `images:` inputs to `docker/metadata-action`, etc.) **must derive owner and repository from `${{ github.repository }}`** (or `${{ github.repository_owner }}` when only the owner is needed). Never hardcode `owner/repository` literals.
 
-Default registry: **GHCR** (`ghcr.io`). Other registries fine when justified — same rule applies (no hardcoded owner/repo segment).
+Default registry: **GHCR** (`ghcr.io`). Other registries fine when justified — same rule applies (no hardcoded owner/repository segment).
 
-Bad — hardcoded owner/repo:
+Bad — hardcoded owner/repository:
 
 ```yaml
 - run: docker build -t ghcr.io/myorg/myapp:${{ github.sha }} .
@@ -189,12 +189,12 @@ Rules:
 
 - Repository rename / fork / transfer keeps workflows working without edit.
 - Lowercase requirement of GHCR: `${{ github.repository }}` already lowercase for standard repos; if owner contains uppercase, pipe through `tr '[:upper:]' '[:lower:]'` in a prior step rather than hardcoding.
-- Multi-image repos (one workflow builds N images): suffix off `${{ github.repository }}` — e.g. `ghcr.io/${{ github.repository }}/backend`, `ghcr.io/${{ github.repository }}/app`. Image name segment after the repo path is fine to literal-string, the owner/repo segment is not.
-- Per-repository override allowed when a repo intentionally publishes under a different namespace (e.g. org-wide shared image name). Document the override in workflow comment per §3.
+- Multi-image repositories (one workflow builds N images): suffix off `${{ github.repository }}` — e.g. `ghcr.io/${{ github.repository }}/backend`, `ghcr.io/${{ github.repository }}/app`. Image name segment after the repository path is fine to literal-string, the owner/repository segment is not.
+- Per-repository override allowed when a repository intentionally publishes under a different namespace (e.g. org-wide shared image name). Document the override in workflow comment per §3.
 
 ### 5.2 Docker Tag Pairing — `:latest` Plus Commit SHA
 
-**Every docker push publishes at least two tags pointing at same digest: `:latest` and the commit SHA (`${{ github.sha }}`).** Mutable pointer for "current tip", immutable pointer for exact provenance. Consumers pin SHA in prod, track `:latest` for dev.
+**Every Docker push publishes at least two tags pointing at same digest: `:latest` and the commit SHA (`${{ github.sha }}`).** Mutable pointer for "current tip", immutable pointer for exact provenance. Consumers pin SHA in prod, track `:latest` for dev.
 
 Bad — single floating tag, no immutable pointer:
 
@@ -244,7 +244,13 @@ Good — `docker/metadata-action` generating both:
 Rules:
 
 - Use `${{ github.sha }}` (full 40-char SHA) — not short SHA. Unambiguous, matches `git log` / `gh` output exactly.
-- On tag releases (`tag.yml`): mirror pattern with `:release` as the mutable pointer, `${{ github.ref_name }}` as the immutable version tag (e.g. `v1.2.3`), plus `${{ github.sha }}` for exact provenance. Three tags minimum, same digest: `:release`, `:${{ github.ref_name }}`, `:${{ github.sha }}`. Do **not** push `:latest` from `tag.yml` — `:latest` belongs to master tip, `:release` belongs to most recent tagged release. Use `docker/metadata-action` with `type=semver` for richer fan-out (`v1.2.3`, `v1.2`, `v1`) alongside `type=raw,value=release`.
+- On tag releases (`tag.yml`): mirror the pattern with `:release` as mutable pointer
+  and `${{ github.ref_name }}` as immutable version tag (e.g. `v1.2.3`), plus
+  `${{ github.sha }}` for exact provenance. Three tags minimum, same digest:
+  `:release`, `:${{ github.ref_name }}`, `:${{ github.sha }}`. Do **not** push
+  `:latest` from `tag.yml` — `:latest` belongs to master tip, `:release` belongs to
+  most recent tagged release. Use `docker/metadata-action` with `type=semver` for
+  richer fan-out (`v1.2.3`, `v1.2`, `v1`) alongside `type=raw,value=release`.
 - Single `build-push-action` invocation pushing all tags — do not run multiple builds. Same digest must back every tag, otherwise SHA tag breaks reproducibility.
 - `:latest` published only from `master` (`push.yml`). Feature branches: skip `:latest`, push branch-name tag (`type=ref,event=branch`) plus SHA. Tag releases (`tag.yml`) use `:release` instead — see rule above.
 - Combine with §11.1: tag pairing applies inside push-gated job — never on PR events.
@@ -469,8 +475,15 @@ When auditing repositories, look for:
 - Multiple competing formatters configured per language in same repository (e.g. both `black` and `ruff format`, or both `prettier` and `biome`).
 - CI workflows without `paths-filter` despite multi-component layout.
 - Hardcoded versions/tags/image names in workflows, or `env` aliases re-aliasing exposed `${{ github.* }}` context.
-- Docker image references in workflows hardcoding owner/repo (`ghcr.io/myorg/myapp`) instead of deriving from `${{ github.repository }}` / `${{ github.repository_owner }}` (§5.1).
-- Docker push publishing only one tag — missing `:latest`/SHA pair on `push.yml`, or missing `:release`/`${{ github.ref_name }}`/SHA triple on `tag.yml` (§5.2). Single floating tag with no immutable companion = no provenance; single immutable tag with no convenience pointer = no consumer ergonomics. `:latest` pushed from `tag.yml` (or `:release` pushed from `push.yml`) = mutable-pointer crossover, also drift.
+- Docker image references in workflows hardcoding owner/repository
+  (`ghcr.io/myorg/myapp`) instead of deriving from `${{ github.repository }}` /
+  `${{ github.repository_owner }}` (§5.1).
+- Docker push publishing only one tag — missing `:latest`/SHA pair on `push.yml`,
+  or missing `:release`/`${{ github.ref_name }}`/SHA triple on `tag.yml` (§5.2).
+  Single floating tag with no immutable companion = no provenance; single
+  immutable tag with no convenience pointer = no consumer ergonomics. `:latest`
+  pushed from `tag.yml` (or `:release` pushed from `push.yml`) = mutable-pointer
+  crossover, also drift.
 - Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical antipattern.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.

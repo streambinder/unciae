@@ -38,7 +38,7 @@ A per-repository `CLAUDE.md` / `AGENTS.md` / equivalent overrides these guidelin
 
 ### 3.1 Canonical Formatters (match super-linter locally)
 
-Format/auto-fix with the **same tool super-linter ships** before linting, committing, or running tests. Avoids CI ↔ local drift. All super-linter `FIX_*` envs default `false`; treat the table below as the local equivalent to opt-in fix mode.
+Format/autofix with the **same tool super-linter ships** before linting, committing, or running tests. Avoids CI ↔ local drift. All super-linter `FIX_*` envs default `false`; treat the table below as the local equivalent to opt-in fix mode.
 
 | Language                            | Tool                                    | Local command                         | super-linter `FIX_*`                                                                |
 | ----------------------------------- | --------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |

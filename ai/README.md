@@ -31,10 +31,33 @@ A per-repository `CLAUDE.md` / `AGENTS.md` / equivalent overrides these guidelin
 [`super-linter`](https://github.com/super-linter/super-linter) is the **de-facto linter for all repositories**. Run via GitHub Actions.
 
 - Use **defaults** wherever possible. Override only with strong justification, documented in workflow comment.
-- Single workflow: `.github/workflows/lint.yml` invoking `super-linter/super-linter@<sha>`.
+- Invoked as job inside `.github/workflows/push.yml` (see §11), not separate `lint.yml`.
 - Per-language linter configs (`.eslintrc`, `.golangci.yml`, etc.) only when defaults genuinely don't fit.
 - `super-linter` covers secret scanning — no separate `gitleaks`/`trufflehog` workflow.
 - Avoid bespoke per-language lint workflows — consolidate under super-linter.
+
+### 3.1 Canonical Formatters (match super-linter locally)
+
+Format/auto-fix with the **same tool super-linter ships** before linting, committing, or running tests. Avoids CI ↔ local drift. All super-linter `FIX_*` envs default `false`; treat the table below as the local equivalent to opt-in fix mode.
+
+| Language                            | Tool                                    | Local command                         | super-linter `FIX_*`                                                                |
+| ----------------------------------- | --------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
+| Go                                  | `gofumpt` (preferred), else `gofmt`     | `gofumpt -w .`                        | `FIX_GO`, `FIX_GO_MODULES`                                                          |
+| Python                              | `ruff format` + `isort` (or `black`)    | `ruff format . && ruff check --fix .` | `FIX_PYTHON_RUFF_FORMAT`, `FIX_PYTHON_RUFF`, `FIX_PYTHON_ISORT`, `FIX_PYTHON_BLACK` |
+| JavaScript / TS                     | `prettier` + `eslint --fix`             | `prettier -w . && eslint --fix .`     | `FIX_{JAVASCRIPT,TYPESCRIPT}_{PRETTIER,ES}`, `FIX_BIOME_FORMAT`                     |
+| JSON / YAML / Markdown / CSS / HTML | `prettier`                              | `prettier -w .`                       | `FIX_{JSON,YAML,MARKDOWN,CSS,HTML}_PRETTIER`                                        |
+| Shell / Bash                        | `shfmt`                                 | `shfmt -w .`                          | `FIX_SHELL_SHFMT`                                                                   |
+| Rust                                | `rustfmt` + `clippy --fix`              | `cargo fmt && cargo clippy --fix`     | `FIX_RUST_<edition>`, `FIX_RUST_CLIPPY`                                             |
+| Dart / Flutter                      | `dart format` (super-linter lints only) | `dart format .`                       | — (no fix mode in super-linter; run locally)                                        |
+| Terraform                           | `terraform fmt`                         | `terraform fmt -recursive`            | `FIX_TERRAFORM_FMT`                                                                 |
+| Dockerfile                          | none (lint via `hadolint`)              | `hadolint Dockerfile`                 | —                                                                                   |
+
+Rules:
+
+- **Before commit / before push**: run the formatter for every language touched. Keeps super-linter green on first CI pass.
+- **Before tests**: format first — formatter-induced diffs caught at lint stage waste a CI cycle.
+- One canonical formatter per language per repository. Don't mix `black` and `ruff format`, or `prettier` and `biome`, in the same repository.
+- If a repository pins a different choice (per-repository `CLAUDE.md` / config), respect it — flag the divergence, don't auto-switch.
 
 ---
 
@@ -188,16 +211,23 @@ Tests live alongside or in idiomatic test directory per lang — pick one per re
 - **Feature branches**: `feat/<short-name>`. Catch-all prefix — covers fixes, chores, docs too unless context strongly justifies different prefix.
 - **Signed commits**: **always**. Every commit GPG/SSH-signed.
 - **Tags**: `vMAJOR.MINOR.PATCH` (SemVer). No `v0` perpetual.
-- **Release flow**: tag creation triggers `push.yml` → release artifact published. Some repositories may release on every push to `master` instead — detect from workflow.
+- **Release flow**: tag creation triggers `tag.yml` → release artifact published. CI on `master` push / PRs runs via `push.yml`.
 - **No CHANGELOG file.** GitHub release notes auto-generated from commit history (Conventional Commits make this clean).
 
 ---
 
 ## 11. CI Workflow Naming
 
-- **Primary push workflow**: `.github/workflows/push.yml`. One per repository. Triggered on push to `master` + tag creation.
-- Other workflows kept narrow-purpose: `lint.yml` (super-linter), `dependabot-auto-merge.yml`, etc.
-- Avoid generic `ci.yml` / `test.yml` — use `push.yml` as canonical entry.
+Two **canonical** workflows carry standard lint/build/test/deploy. Other narrow-purpose workflows fine when they serve a distinct concern.
+
+- **`.github/workflows/push.yml`** — triggers on push to `master` and on pull requests. Houses standard CI: super-linter, build, test, coverage. Use `paths-filter` (§4) to gate per-component jobs.
+- **`.github/workflows/tag.yml`** — triggers on tag creation matching `v*`. Houses release jobs: build artifacts, publish images/packages, create GitHub release.
+
+Rules:
+
+- **No** `lint.yml` / `ci.yml` / `test.yml` / `release.yml` — those collapse into `push.yml` or `tag.yml`.
+- Other workflows allowed when single-purpose and orthogonal: `dependabot-auto-merge.yml`, `codeql.yml`, scheduled scans, `workflow_dispatch`-only ops, etc.
+- Reusable logic via `workflow_call` / composite actions (§5), not duplicate top-level workflows.
 
 ---
 
@@ -247,9 +277,10 @@ Canonical template (root or `.github/`):
 A change is **done** only when all of:
 
 1. Target behavior achieved (feature works / bug fixed).
-2. Linted (super-linter clean).
-3. Tested (coverage maintained at ~100% unit).
-4. Docs updated (external site or in-repository `docs/` reflect change).
+2. Formatted with canonical tool per §3.1 (run before commit).
+3. Linted (super-linter clean).
+4. Tested (coverage maintained at ~100% unit).
+5. Docs updated (external site or in-repository `docs/` reflect change).
 
 Don't mark complete or commit otherwise.
 
@@ -293,8 +324,10 @@ When auditing repositories, look for:
 - Default branch ≠ `master`.
 - Branch names not following `feat/` convention.
 - Unsigned commits in recent history.
-- Workflow file ≠ `push.yml` for primary CI.
+- Workflow file ≠ `push.yml` / `tag.yml` for primary CI / release. Presence of `lint.yml`, `ci.yml`, `test.yml`, `release.yml` = drift; collapse into `push.yml` or `tag.yml`.
 - Missing `super-linter` workflow, or super-linter with non-default overrides lacking justification.
+- Code not formatted with canonical tool per §3.1 (e.g. Go file not `gofumpt`-clean, Python not `ruff format`-clean, JS/TS not `prettier`-clean).
+- Multiple competing formatters configured per language in same repository (e.g. both `black` and `ruff format`, or both `prettier` and `biome`).
 - CI workflows without `paths-filter` despite multi-component layout.
 - Hardcoded versions/tags/image names in workflows, or `env` aliases re-aliasing exposed `${{ github.* }}` context.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.

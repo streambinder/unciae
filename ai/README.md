@@ -322,7 +322,9 @@ A change is **done** only when all of:
 2. Formatted with canonical tool per §3.1 (run before commit).
 3. Linted (super-linter clean).
 4. Tested (coverage maintained at ~100% unit).
-5. Docs updated (external site or in-repository `docs/` reflect change).
+5. Docs updated. If repository has `docs/` folder (or external docs site), audit
+   whether change impacts documented behavior, APIs, config, CLI flags, schemas, or
+   examples. Update affected pages in same commit/PR. Stale docs block done.
 6. **Post-push CI green.** If pushed to a remote whose repository defines workflows
    triggered by `push` (check `.github/workflows/*.yml` for `on: push` — including
    branch filters matching the pushed ref), track the run kicked off by the push until

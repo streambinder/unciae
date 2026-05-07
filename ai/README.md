@@ -323,7 +323,13 @@ A change is **done** only when all of:
 3. Linted (super-linter clean).
 4. Tested (coverage maintained at ~100% unit).
 5. Docs updated (external site or in-repository `docs/` reflect change).
-6. **Post-push CI green.** If pushed to a remote whose repo defines workflows triggered by `push` (check `.github/workflows/*.yml` for `on: push` — incl. branch filters matching the pushed ref), track the run kicked off by the push until it completes. Tail with `gh run watch` on the run for the pushed SHA, or poll `gh run list --branch <branch> --commit <sha>` until conclusion. On failure: surface logs (`gh run view --log-failed`), do not declare done. On success: report run URL + conclusion. Skip only if no `push`-triggered workflow matches the pushed ref.
+6. **Post-push CI green.** If pushed to a remote whose repository defines workflows
+   triggered by `push` (check `.github/workflows/*.yml` for `on: push` — including
+   branch filters matching the pushed ref), track the run kicked off by the push until
+   it completes. Tail with `gh run watch` on the run for the pushed SHA, or poll
+   `gh run list --branch <branch> --commit <sha>` until conclusion. On failure: surface
+   logs (`gh run view --log-failed`), do not declare done. On success: report run URL
+   plus conclusion. Skip only if no `push`-triggered workflow matches the pushed ref.
 
 Don't mark complete or commit otherwise.
 

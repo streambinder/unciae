@@ -557,10 +557,11 @@ immich = { git = "https://github.com/streambinder/unciae.git", tag = "v0.42.0", 
 
 ### 21.7 Type Annotations
 
-- **Mandatory**: full type annotations on every function, method, and module-level binding. Public and private alike.
+- **Target**: full type annotations on every function, method, and module-level binding. Public and private alike.
 - **`from __future__ import annotations`** at top of every `.py` file.
 - **`Any`** requires inline justification comment.
 - **CI**: `uv run mypy --strict .` (or `ty` once stable from astral). No untyped escape hatches via `# type: ignore` without comment explaining why.
+- **Migration grace period**: pre-existing projects migrating to this scheme MAY commit phase-1 (tooling: pyproject.toml + uv.lock + ruff) before phase-2 (full annotations + strict mypy). Phase-1 commits MUST set `[tool.mypy] strict = false` with a comment naming phase-2 as follow-up. New projects MUST land both phases atomically.
 
 ### 21.8 Lint & Format
 

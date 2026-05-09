@@ -295,14 +295,14 @@ Defaults: weekly schedule, grouped minor/patch updates per ecosystem to reduce P
 
 Respect language-idiomatic layout. **Do not force uniform `src/` across all stacks.**
 
-| Lang             | Layout                                                                                                                                   |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Go               | [Standard Go Project Layout](https://github.com/golang-standards/project-layout): `cmd/`, `internal/`, `pkg/`, flat packages — no `src/` |
-| TS/JS (lib)      | `src/` + `dist/`, ESM, `package.json` `exports` field                                                                                    |
-| TS/JS (Node app) | `src/`, `tests/`, build to `dist/`                                                                                                       |
-| Python           | [src-layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/): `src/<pkg>/`, `tests/`, `pyproject.toml`    |
-| Dart/Flutter     | `lib/`, `test/`, `assets/`, idiomatic Flutter structure                                                                                  |
-| Rust             | Cargo conventions: `src/`, `tests/`, `examples/`                                                                                         |
+| Lang             | Layout                                                                                                                                                                                                                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go               | [Standard Go Project Layout](https://github.com/golang-standards/project-layout): `cmd/`, `internal/`, `pkg/`, flat packages — no `src/`                                                                                                                                                |
+| TS/JS (lib)      | `src/` + `dist/`, ESM, `package.json` `exports` field                                                                                                                                                                                                                                   |
+| TS/JS (Node app) | `src/`, `tests/`, build to `dist/`                                                                                                                                                                                                                                                      |
+| Python           | [src-layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/): `src/<pkg>/`, `tests/`, `pyproject.toml`. Exception: single-file tool runners (e.g. `unciae/<category>/<tool>/runner.py`) use flat layout — `runner.py` + `pyproject.toml` adjacent (§21). |
+| Dart/Flutter     | `lib/`, `test/`, `assets/`, idiomatic Flutter structure                                                                                                                                                                                                                                 |
+| Rust             | Cargo conventions: `src/`, `tests/`, `examples/`                                                                                                                                                                                                                                        |
 
 Tests live alongside or in idiomatic test directory per lang — pick one per repository, stay consistent.
 
@@ -312,7 +312,7 @@ Tests live alongside or in idiomatic test directory per lang — pick one per re
 
 - **Go**: `gofumpt`-clean, `any` over `interface{}`, errors wrapped with `%w`, table-driven tests.
 - **TS**: strict mode, no `any` without comment, ESM, no default exports for libs.
-- **Python**: type hints on public API, `ruff` defaults, `pyproject.toml` not `setup.py`.
+- **Python**: see §21 — `uv` + `pyproject.toml` only, full type annotations, `ruff` + `mypy --strict`, `uv.lock` committed.
 - **Dart**: null-safety, `const` constructors, `flutter_lints` baseline.
 
 ---
@@ -404,7 +404,7 @@ Canonical template (root or `.github/`):
 
 - **Always upgrade to latest** where compatible. Dependabot configured aggressively (weekly minimum, daily acceptable).
 - Pin to exact versions when ecosystem allows; avoid range operators (`^`, `~`, `>=`) in production manifests.
-- **Lockfiles not committed.** Add to `.gitignore`: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`, `Gemfile.lock`, `Cargo.lock` (binary projects only — libraries follow Rust convention). Go `go.sum` is exception (commit it — different semantics).
+- **Lockfiles not committed.** Add to `.gitignore`: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `Gemfile.lock`, `Cargo.lock` (binary projects only — libraries follow Rust convention). Exceptions: Go `go.sum` (different semantics — commit), Python `uv.lock` (commit per §21).
 
 ---
 
@@ -491,7 +491,7 @@ When auditing repositories, look for:
 - Verbose commit bodies restating the diff.
 - Commit body lines >100 chars (commitlint `body-max-line-length` default).
 - Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.2).
-- Lockfiles committed (except `go.sum`).
+- Lockfiles committed (except `go.sum` and `uv.lock`).
 - Coverage <100% on unit tests.
 - Presence of `CHANGELOG.md` (should not exist).
 - Presence of `pre-commit`/`husky`/`lefthook` config (should not exist).
@@ -502,3 +502,101 @@ When auditing repositories, look for:
 - Lang layout violations (e.g. Go repository with `src/`, Python repository flat-layout when src-layout expected).
 
 Surface as **drift report**, not autofix.
+
+---
+
+## 21. Python Project Standard
+
+All Python projects across all repositories follow this scheme. No exceptions for "small scripts" — if it has a `.py` file deployed or shipped, it has a `pyproject.toml`.
+
+### 21.1 Manifests
+
+- **Required**: `pyproject.toml` (PEP 621).
+- **Forbidden**: `requirements.txt`, `requirements-*.txt`, `setup.py`, `setup.cfg`, `Pipfile`, `Pipfile.lock`, `poetry.lock`. Migrate or delete on sight.
+- **Build backend**: `hatchling` (default). Other backends require justification.
+
+### 21.2 Resolver, Runner, Lockfile
+
+- **Tool**: `uv` only. No `pip install`, no `poetry`, no `pipenv` in workflows or docs.
+- **Lockfile**: `uv.lock` committed per project (one per `pyproject.toml`). Overrides §15 lockfile-ignore default.
+- **Install**: `uv sync --frozen` (CI) / `uv sync` (dev).
+- **Run**: `uv run python <script>` or `uv run <entrypoint>`. Never bare `python`.
+
+### 21.3 Python Version
+
+- **Floor**: latest stable Python (currently `>=3.13`). Bump when next minor lands and tooling catches up.
+- **Pin**: `requires-python = ">=3.13"` in `pyproject.toml` + `.python-version` file at project root for `uv python install` resolution.
+
+### 21.4 Layout
+
+- **Tool runner** (single-file CLI under `unciae/<category>/<tool>/`): flat — `runner.py` + `pyproject.toml` + optional `__init__.py` adjacent. Wheel exposed via `[tool.hatch.build.targets.wheel] force-include`.
+- **Library** (reusable, importable across repos): flat at category root (e.g. `unciae/<category>/<lib>/{api.py,__init__.py,pyproject.toml}`) or `src/<pkg>/` for non-trivial libs.
+- **App** (deployed service, e.g. `serica`): `src/<pkg>/` layout, `[project.scripts]` for entrypoints.
+- **Build tool** (e.g. `streambinder`, `erro` `.make/`): keep `.make/` directory; expose via `[tool.hatch.build.targets.wheel] packages = [".make"]` (rename via `[tool.hatch.build.targets.wheel.sources]` if dot-prefix breaks import).
+
+### 21.5 Naming
+
+- Project `[project] name` is bare `<pkg>` — no `unciae-` or repo-prefix. Collisions inside the monorepo are not expected since each `unciae/<category>/<tool>/` is unique.
+- PyPI namespace collision is not a concern (packages are not published). `[tool.uv.sources]` overrides any same-name PyPI lookup.
+
+### 21.6 Cross-Project Dependencies (Git Sources)
+
+Pure Git references — no PyPI, no private index, no path deps in committed manifests.
+
+```toml
+[project]
+dependencies = ["immich"]
+
+[tool.uv.sources]
+immich = { git = "https://github.com/streambinder/unciae.git", tag = "v0.42.0", subdirectory = "media/immich" }
+```
+
+- **Tag**: repository-wide `vX.Y.Z` (per §10) — no per-package tag prefix. Bumping any library in a repository requires a repository tag bump; consumers re-resolve on next `uv lock`.
+- **`uv.lock` pins resolved SHA** regardless of `tag` / `branch` source — reproducibility guaranteed.
+- **Local dev override**: gitignored `uv.toml` next to consumer's `pyproject.toml` with `[sources] <pkg> = { path = "...", editable = true }`. Never commit path sources.
+
+### 21.7 Type Annotations
+
+- **Mandatory**: full type annotations on every function, method, and module-level binding. Public and private alike.
+- **`from __future__ import annotations`** at top of every `.py` file.
+- **`Any`** requires inline justification comment.
+- **CI**: `uv run mypy --strict .` (or `ty` once stable from astral). No untyped escape hatches via `# type: ignore` without comment explaining why.
+
+### 21.8 Lint & Format
+
+- **Tool**: `ruff` only — single tool for both. No `black`, no `isort`, no `flake8`, no `pylint`.
+- **CI gates**: `uv run ruff check .` + `uv run ruff format --check .`.
+- Config under `[tool.ruff]` in `pyproject.toml` (per §3.2 — no separate config file).
+
+### 21.9 CI Gates (per `push.yml`)
+
+For Python paths-filter match, run in order:
+
+1. `uv lock --check` — lockfile in sync with manifest
+2. `uv sync --frozen` — installs cleanly
+3. `uv run ruff check .`
+4. `uv run ruff format --check .`
+5. `uv run mypy --strict .`
+6. `uv run pytest` (if tests present)
+
+### 21.10 Bootstrap Behavior (clavis / imperium)
+
+When a Python tool is materialized on a host:
+
+- **Detect** `pyproject.toml` adjacent to `runner.py`.
+- **Hard fail** if `runner.py` exists without `pyproject.toml`. No fallback to `requirements.txt`, no fallback to bare symlink.
+- **Install**: `uv sync --frozen` in tool directory.
+- **Wrapper**: generated shim script `exec uv --project <dir> run python <dir>/runner.py "$@"`.
+
+### 21.11 Migration Drift Signals
+
+Add to §20 audit list:
+
+- Presence of `requirements.txt`, `setup.py`, `Pipfile`, `poetry.lock` — migrate to `pyproject.toml` + `uv.lock`.
+- `pyproject.toml` without `uv.lock` adjacent.
+- `pyproject.toml` without `requires-python = ">=3.13"` (or current floor).
+- Python source file without type annotations or without `from __future__ import annotations`.
+- CI workflow invoking `pip`, `poetry`, `pipenv`.
+- Path source (`{ path = ... }`) committed in `pyproject.toml` (allowed only in gitignored `uv.toml` overrides).
+
+---

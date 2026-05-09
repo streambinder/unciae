@@ -120,7 +120,8 @@ class Restup:
                     pipe_out, pipe_err = pipe_restic.communicate()
                     if pipe_err is not None:
                         self.__t_print(
-                            f"Unable to apply retention on {task['respository']} repository: " + pipe_err,
+                            f"Unable to apply retention on {task['respository']} repository: "
+                            + pipe_err,
                             file=sys.stderr,
                         )
                         return

@@ -567,7 +567,7 @@ immich = { git = "https://github.com/streambinder/unciae.git", tag = "v0.42.0", 
 
 - **Tool**: `ruff` only — single tool for both. No `black`, no `isort`, no `flake8`, no `pylint`.
 - **CI gates**: `uv run ruff check .` + `uv run ruff format --check .`.
-- Config under `[tool.ruff]` in `pyproject.toml` (per §3.2 — no separate config file).
+- **Config**: single `.github/linters/.ruff.toml` per repository (per §3.2 — super-linter consumes it). Do NOT put `[tool.ruff]` in per-package `pyproject.toml` — it would be ignored by super-linter and cause CI/local drift.
 
 ### 21.9 CI Gates (per `push.yml`)
 

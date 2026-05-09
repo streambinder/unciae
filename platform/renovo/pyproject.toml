@@ -19,9 +19,6 @@ dependencies = [
 packages = []
 force-include = { "runner.py" = "renovo/runner.py" }
 
-[tool.ruff]
-line-length = 100
-
 [tool.mypy]
 # phase-2 follow-up: enable strict mode + full annotations per ai/README.md §21.7
 strict = false

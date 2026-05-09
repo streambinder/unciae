@@ -1,5 +1,0 @@
-anyio
-asyncio
-asyncclick
-setuptools
-termcolor

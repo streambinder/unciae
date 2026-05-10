@@ -11,10 +11,13 @@ requires-python = ">=3.13"
 license = { text = "GPL-3.0-or-later" }
 dependencies = ["pyyaml"]
 
+[dependency-groups]
+dev = ["mypy", "types-PyYAML"]
+
 [tool.hatch.build.targets.wheel]
 packages = []
 force-include = { "runner.py" = "restup/runner.py" }
 
 [tool.mypy]
-# phase-2 follow-up: enable strict mode + full annotations per ai/README.md §21.7
-strict = false
+strict = true
+files = ["runner.py"]

@@ -10,6 +10,9 @@ requires-python = ">=3.13"
 license = { text = "GPL-3.0-or-later" }
 dependencies = ["immich"]
 
+[dependency-groups]
+dev = ["mypy"]
+
 [tool.uv.sources]
 immich = { git = "https://github.com/streambinder/unciae.git", branch = "master", subdirectory = "media/immich" }
 
@@ -18,5 +21,5 @@ packages = []
 force-include = { "runner.py" = "album_assets/runner.py" }
 
 [tool.mypy]
-# phase-2 follow-up: enable strict mode + full annotations per ai/README.md §21.7
-strict = false
+strict = true
+files = ["runner.py"]

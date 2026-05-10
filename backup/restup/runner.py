@@ -1,29 +1,34 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import os
 import subprocess
 import sys
 import threading
+from typing import IO, Any
 
 import yaml
 
+Task = dict[str, Any]
+
 
 class Restup:
-    def __init__(self, cfg):
-        self.tasks = []
-        self.__threads = []
+    def __init__(self, cfg: dict[str, Any]) -> None:
+        self.tasks: list[Task] = []
+        self.__threads: list[threading.Thread] = []
         self.__mutex = threading.Lock()
         self.__parse_config(cfg)
         self.__validate_config()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(vars(self))
 
-    def __parse_config(self, cfg):
+    def __parse_config(self, cfg: dict[str, Any]) -> None:
         if "tasks" in cfg:
             self.tasks = cfg["tasks"]
 
-    def __validate_config(self):
+    def __validate_config(self) -> None:
         for t in self.tasks:
             for mandatory_token in ["repository", "password", "path"]:
                 if mandatory_token not in t or t[mandatory_token] is None:
@@ -41,17 +46,17 @@ class Restup:
                 if not os.path.exists(t[path_entry]):
                     raise RuntimeError(f"{path_entry} path {t[path_entry]} does not exist")
 
-    def __wait(self):
+    def __wait(self) -> None:
         for thread in self.__threads:
             thread.join()
 
-    def __t_print(self, payload, file=sys.stdout):
+    def __t_print(self, payload: str | bytes | bytearray, file: IO[str] = sys.stdout) -> None:
         with self.__mutex:
             if isinstance(payload, (bytes, bytearray)):
                 payload = payload.decode("utf-8")
             print(payload, file=file)
 
-    def __process(self, task):
+    def __process(self, task: Task) -> None:
         if "prespawn" in task:
             try:
                 self.__t_print(f"Running pre-hook {task['prespawn']}...")
@@ -64,7 +69,7 @@ class Restup:
                 return
 
         self.__t_print(f"Spawning {task['path']} directory restic backup")
-        regexes = []
+        regexes: list[str] = []
         if "regexes" in task:
             for regex in task["regexes"]:
                 regexes += ["--iexclude", regex]
@@ -85,7 +90,7 @@ class Restup:
                 pipe_out, pipe_err = pipe_restic.communicate()
                 if pipe_err is not None:
                     self.__t_print(
-                        f"Unable to backup {task['respository']} repository: {pipe_err}",
+                        f"Unable to backup {task['repository']} repository: {pipe_err!r}",
                         file=sys.stderr,
                     )
                     return
@@ -120,8 +125,8 @@ class Restup:
                     pipe_out, pipe_err = pipe_restic.communicate()
                     if pipe_err is not None:
                         self.__t_print(
-                            f"Unable to apply retention on {task['respository']} repository: "
-                            + pipe_err,
+                            f"Unable to apply retention on {task['repository']} repository: "
+                            f"{pipe_err!r}",
                             file=sys.stderr,
                         )
                         return
@@ -129,7 +134,7 @@ class Restup:
 
         self.__t_print(f"Repository {task['repository']} updated")
 
-    def run(self):
+    def run(self) -> None:
         for t in self.tasks:
             thread = threading.Thread(target=self.__process, args=[t])
             self.__threads.append(thread)

@@ -45,8 +45,30 @@ jobs:
           VALIDATE_PYTHON_MYPY: false
           VALIDATE_GO: false
           IGNORE_GITIGNORED_FILES: true
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.11.12
+      - name: Run mypy --strict per Python project
+        run: |
+          set -euo pipefail
+          # discover every project except the .venv-shadowed roots; each pyproject
+          # owns its mypy scope via [tool.mypy] files = [...] so sibling runner.py
+          # files in adjacent projects don't collide as duplicate modules
+          while IFS= read -r -d '' proj; do
+            dir="$(dirname "$proj")"
+            echo "::group::$dir"
+            uv sync --frozen --project "$dir"
+            (cd "$dir" && uv run mypy --strict)
+            echo "::endgroup::"
+          done < <(find . -name pyproject.toml -not -path '*/.venv/*' -print0)
   notify-clavis:
-    needs: [super-linter]
+    needs: [super-linter, mypy]
     if: >-
       success() &&
       github.event_name == 'push' &&
@@ -65,7 +87,7 @@ jobs:
               "sha": "${{ github.sha }}"
             }
   notify-imperium:
-    needs: [super-linter]
+    needs: [super-linter, mypy]
     if: >-
       success() &&
       github.event_name == 'push' &&

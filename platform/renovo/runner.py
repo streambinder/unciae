@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import hashlib
 import os
 import platform
 import shutil
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from getpass import getpass
-from typing import Any, AsyncGenerator, List, Optional, Tuple
+from typing import Any, cast
 
 import anyio
 import asyncclick as click
 from termcolor import colored
 
-DEP_FNS = set()
+CommandSpec = tuple[list[str], dict[str, Any]]
+CommandGenerator = AsyncGenerator[CommandSpec, None]
+DepFn = Callable[[], Coroutine[Any, Any, None]]
+
+DEP_FNS: set[DepFn] = set()
 SHELL_COLORS = [
     "green",
     "yellow",
@@ -32,12 +39,12 @@ def color_by_name(keyword: str) -> str:
     return SHELL_COLORS[sum(hashlib.md5(keyword.encode()).hexdigest().encode()) % len(SHELL_COLORS)]
 
 
-def only_once(func):
+def only_once(func: Callable[..., Any]) -> Callable[..., Any]:
     _run_attr = "_run"
     _value_attr = "_value"
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         if getattr(func, _run_attr, False):
             return getattr(func, _value_attr, None)
 
@@ -50,7 +57,7 @@ def only_once(func):
 
 
 @only_once
-def get_pass(program: Optional[str] = None) -> str:
+def get_pass(program: str | None = None) -> str:
     return getpass(f"Authenticate{' for ' + program if program else ''}: ")
 
 
@@ -62,7 +69,7 @@ def is_exec(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def print_line(program: str, line: str, color: Optional[str] = None) -> None:
+def print_line(program: str, line: str, color: str | None = None) -> None:
     if not line:
         return
 
@@ -74,7 +81,7 @@ def print_line(program: str, line: str, color: Optional[str] = None) -> None:
     )
 
 
-async def spawn(*args, **kwargs) -> asyncio.subprocess.Process:
+async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
     return await asyncio.create_subprocess_exec(
         *args,
         stdin=asyncio.subprocess.PIPE,
@@ -84,12 +91,14 @@ async def spawn(*args, **kwargs) -> asyncio.subprocess.Process:
     )
 
 
-async def print_stream(stream, program, color: Optional[str] = None) -> None:
+async def print_stream(
+    stream: asyncio.StreamReader, program: str, color: str | None = None
+) -> None:
     while line := await stream.readline():
         print_line(program, line.decode().rstrip(), color)
 
 
-async def write_stdin(stdin: Optional[asyncio.StreamWriter] = None) -> None:
+async def write_stdin(stdin: asyncio.StreamWriter | None = None) -> None:
     if not stdin:
         return
 
@@ -101,27 +110,30 @@ async def write_stdin(stdin: Optional[asyncio.StreamWriter] = None) -> None:
 def dep(
     cmd: str | None = None,
     platform_name: str = "",
-    env: Optional[List[str]] = None,
-):
+    env: list[str] | None = None,
+) -> Callable[[Callable[[], CommandGenerator]], DepFn]:
     valid_os = is_os(platform_name)
     valid_env = len([e for e in (env or []) if e not in os.environ]) == 0
 
-    def decorator_dep(func):
+    def decorator_dep(func: Callable[[], CommandGenerator]) -> DepFn:
         program = func.__name__
         valid_cmd = is_exec(cmd or program)
 
         @functools.wraps(func)
-        async def wrapper_dep(*args: Any, **kwargs: Any):
+        async def wrapper_dep(*args: Any, **kwargs: Any) -> None:
             if not (valid_cmd and valid_os and valid_env):
                 print_line(program, "is unsupported")
                 return
 
             print_line(program, "upgrading...")
-            async for p_args, p_kwargs in func(*args, **kwargs):
-                if sudo := p_args[0] == "sudo":
+            async for p_args, p_kwargs in func():
+                sudo = p_args[0] == "sudo"
+                if sudo:
                     p_args.insert(1, "-S")
 
                 if process := await spawn(*p_args, **p_kwargs):
+                    assert process.stdout is not None
+                    assert process.stderr is not None
                     await asyncio.gather(
                         write_stdin(process.stdin if sudo else None),
                         print_stream(process.stdout, program),
@@ -130,20 +142,17 @@ def dep(
 
             print_line(program, "upgrade complete.")
 
-        DEP_FNS.add(wrapper_dep)
-        return wrapper_dep
+        wrapped = cast(DepFn, wrapper_dep)
+        DEP_FNS.add(wrapped)
+        return wrapped
 
     return decorator_dep
 
 
 @dep(platform_name="linux")
-async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
+async def apt() -> CommandGenerator:
     kwargs = {"env": dict(os.environ, DEBIAN_FRONTEND="noninteractive")}
-    apt_get = [
-        "sudo",
-        "apt-get",
-        "-y",
-    ]
+    apt_get = ["sudo", "apt-get", "-y"]
     yield apt_get + ["update"], kwargs
     yield apt_get + ["upgrade"], kwargs
     yield apt_get + ["dist-upgrade"], kwargs
@@ -151,46 +160,48 @@ async def apt() -> AsyncGenerator[Tuple[list, dict], None]:
 
 
 @dep(platform_name="linux")
-async def dnf() -> AsyncGenerator[Tuple[list, dict], None]:
+async def dnf() -> CommandGenerator:
     yield ["sudo", "dnf", "upgrade", "-y"], {}
 
 
 @dep()
-async def brew() -> AsyncGenerator[Tuple[list, dict], None]:
+async def brew() -> CommandGenerator:
     yield ["brew", "update", "-q"], {}
     yield ["brew", "upgrade", "-q", "--greedy"], {}
 
 
 @dep(cmd="managedsoftwareupdate")
-async def msc() -> AsyncGenerator[Tuple[list, dict], None]:
+async def msc() -> CommandGenerator:
     yield ["sudo", "managedsoftwareupdate", "--installonly", "--quiet"], {}
 
 
 @dep(cmd="zsh", env=["ZSH"])
-async def omz() -> AsyncGenerator[Tuple[list, dict], None]:
+async def omz() -> CommandGenerator:
     yield [f"{os.getenv('ZSH')}/tools/upgrade.sh"], {}
 
 
 @dep(platform_name="darwin", cmd="softwareupdate")
-async def macos() -> AsyncGenerator[Tuple[list, dict], None]:
+async def macos() -> CommandGenerator:
     yield ["sudo", "softwareupdate", "-iaR"], {}
 
 
 @dep()
-async def yadm() -> AsyncGenerator[Tuple[list, dict], None]:
+async def yadm() -> CommandGenerator:
     yield ["yadm", "pull"], {}
     yield ["yadm", "submodule", "update", "--init", "--recursive"], {}
     yield ["yadm", "bootstrap"], {}
 
 
 @dep(cmd="nix-env")
-async def nix() -> AsyncGenerator[Tuple[list, dict], None]:
+async def nix() -> CommandGenerator:
     yield ["nix-env", "-u", "*"], {}
 
 
 async def is_sudo_required() -> bool:
     for fn in DEP_FNS:
-        async for p_args, _ in fn.__wrapped__():
+        # underlying generator function lives on __wrapped__ via functools.wraps
+        gen_fn = cast(Callable[[], CommandGenerator], fn.__wrapped__)  # type: ignore[attr-defined]
+        async for p_args, _ in gen_fn():
             if p_args and p_args[0] == "sudo":
                 return True
     return False
@@ -199,12 +210,13 @@ async def is_sudo_required() -> bool:
 async def sudo() -> None:
     if await is_sudo_required():
 
-        async def raise_on_auth_error(stream) -> None:
+        async def raise_on_auth_error(stream: asyncio.StreamReader) -> None:
             while line := await stream.readline():
                 if "incorrect password" in line.decode().rstrip().lower():
                     raise click.ClickException("Authentication failed. Please try again.")
 
         if process := await spawn("sudo", "-S", "echo", "-n"):
+            assert process.stderr is not None
             await asyncio.gather(
                 write_stdin(process.stdin),
                 raise_on_auth_error(process.stderr),
@@ -212,7 +224,7 @@ async def sudo() -> None:
 
 
 @click.command()
-async def renovo():
+async def renovo() -> None:
     if await is_sudo_required():
         await sudo()
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 import httpx
 
@@ -63,18 +63,19 @@ class Immich:
         return response.json() if response.content else None
 
     def album(self, album_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/albums/{album_id}")
+        return cast(dict[str, Any], self._request("GET", f"/albums/{album_id}"))
 
     def album_assets(self, album_id: str) -> list[Asset]:
         return [Asset.from_dict(a) for a in self.album(album_id).get("assets", [])]
 
     def search_metadata(self, **filters: Any) -> list[Asset]:
         # Immich expects camelCase; pass through as-is
-        payload = self._request("POST", "/search/metadata", json=filters)
+        payload = cast(dict[str, Any], self._request("POST", "/search/metadata", json=filters))
         return [Asset.from_dict(a) for a in payload.get("assets", {}).get("items", [])]
 
     def empty_trash(self) -> int:
-        return int((self._request("POST", "/trash/empty") or {}).get("count", 0))
+        result = cast(dict[str, Any] | None, self._request("POST", "/trash/empty"))
+        return int((result or {}).get("count", 0))
 
     def run_asset_jobs(self, asset_ids: Iterable[str], job_name: str) -> None:
         self._request(

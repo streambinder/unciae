@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "immich"
-version = "0.1.0"
+version = "0.2.0"
 description = "Reusable Immich API client"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -14,8 +14,7 @@ dependencies = ["httpx>=0.27"]
 # flat layout: api.py + __init__.py at this dir -> wheel module `immich`
 [tool.hatch.build.targets.wheel]
 packages = []
-force-include = { "api.py" = "immich/api.py", "__init__.py" = "immich/__init__.py" }
+force-include = { "api.py" = "immich/api.py", "__init__.py" = "immich/__init__.py", "py.typed" = "immich/py.typed" }
 
 [tool.mypy]
-# phase-2 follow-up: enable strict mode + full annotations per ai/README.md §21.7
-strict = false
+strict = true

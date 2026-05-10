@@ -40,9 +40,7 @@ class Immich:
         resolved_key = api_key or os.environ.get("IMMICH_API_KEY")
         if not resolved_key:
             raise ImmichError("IMMICH_API_KEY not set")
-        resolved_base = (
-            base or os.environ.get("IMMICH_API_BASE") or DEFAULT_BASE
-        ).rstrip("/")
+        resolved_base = (base or os.environ.get("IMMICH_API_BASE") or DEFAULT_BASE).rstrip("/")
         self._client = httpx.Client(
             base_url=f"{resolved_base}/api",
             headers={

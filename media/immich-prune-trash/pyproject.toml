@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "album-assets"
+name = "immich-prune-trash"
 version = "0.1.0"
-description = "List asset paths for Immich albums"
+description = "Delete on-disk originals for trashed Immich assets and empty trash"
 requires-python = ">=3.13"
 license = { text = "GPL-3.0-or-later" }
 dependencies = ["immich"]
@@ -18,7 +18,7 @@ immich = { git = "https://github.com/streambinder/unciae.git", branch = "master"
 
 [tool.hatch.build.targets.wheel]
 packages = []
-force-include = { "runner.py" = "album_assets/runner.py" }
+force-include = { "runner.py" = "immich_prune_trash/runner.py" }
 
 [tool.mypy]
 strict = true

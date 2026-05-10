@@ -7,25 +7,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "album-assets"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "immich" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "immich", git = "https://github.com/streambinder/unciae.git?subdirectory=media%2Fimmich&branch=master" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "mypy" }]
-
-[[package]]
 name = "anyio"
 version = "4.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -137,6 +118,25 @@ source = { git = "https://github.com/streambinder/unciae.git?subdirectory=media%
 dependencies = [
     { name = "httpx" },
 ]
+
+[[package]]
+name = "immich-prune-trash"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "immich" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "immich", git = "https://github.com/streambinder/unciae.git?subdirectory=media%2Fimmich&branch=master" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "mypy" }]
 
 [[package]]
 name = "librt"

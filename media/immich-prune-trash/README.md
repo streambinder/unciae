@@ -1,4 +1,4 @@
-# prune-trash
+# immich-prune-trash
 
 This tool is used to delete physical files of the external library, which are currently in Immich trash.
 The trash is then flushed.
@@ -8,5 +8,5 @@ The trash is then flushed.
 Nothing to do, just run:
 
 ```bash
-prune-trash
+immich-prune-trash
 ```

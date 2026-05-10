@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "refresh-assets"
+name = "immich-album-assets"
 version = "0.1.0"
-description = "Trigger metadata + thumbnail regeneration jobs for Immich assets"
+description = "List asset paths for Immich albums"
 requires-python = ">=3.13"
 license = { text = "GPL-3.0-or-later" }
 dependencies = ["immich"]
@@ -18,7 +18,7 @@ immich = { git = "https://github.com/streambinder/unciae.git", branch = "master"
 
 [tool.hatch.build.targets.wheel]
 packages = []
-force-include = { "runner.py" = "refresh_assets/runner.py" }
+force-include = { "runner.py" = "immich_album_assets/runner.py" }
 
 [tool.mypy]
 strict = true

@@ -7,5 +7,5 @@ This tool is used to re-launch processing jobs (e.g. refresh metadata or thumbna
 Pass it the path to the asset you want to reprocess:
 
 ```bash
-refresh/runner.sh path/to/existing/immich/asset/file.jpg
+refresh-assets path/to/existing/immich/asset/file.jpg
 ```

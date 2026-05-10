@@ -8,5 +8,5 @@ The trash is then flushed.
 Nothing to do, just run:
 
 ```bash
-prune-trash/runner.sh
+prune-trash
 ```

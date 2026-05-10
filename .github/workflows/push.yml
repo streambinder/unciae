@@ -39,6 +39,10 @@ jobs:
           VALIDATE_PYTHON_PYINK: false
           VALIDATE_PYTHON_BLACK: false
           VALIDATE_PYTHON_PYLINT: false
+          # PYTHON_MYPY deferred until phase-2 of the §21.7 migration; super-linter
+          # invokes mypy per-file which can't reconcile sibling runner.py files
+          # under hyphenated tool dirs as separate modules.
+          VALIDATE_PYTHON_MYPY: false
           VALIDATE_GO: false
           IGNORE_GITIGNORED_FILES: true
   notify-clavis:

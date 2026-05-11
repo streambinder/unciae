@@ -255,6 +255,38 @@ Rules:
 - `:latest` published only from `master` (`push.yml`). Feature branches: skip `:latest`, push branch-name tag (`type=ref,event=branch`) plus SHA. Tag releases (`tag.yml`) use `:release` instead — see rule above.
 - Combine with §11.1: tag pairing applies inside push-gated job — never on PR events.
 
+### 5.3 Docker Base Images — Alpine, Streamlined
+
+**Prefer Alpine base images wherever possible.** `alpine:<version>`, `python:<ver>-alpine`, `node:<ver>-alpine`, `golang:<ver>-alpine`, etc. Smaller images, smaller attack surface, faster pulls.
+
+Bad — full Debian/Ubuntu base when Alpine works:
+
+```dockerfile
+FROM python:3.13
+FROM node:22
+FROM golang:1.23 AS build
+```
+
+Good — Alpine variant:
+
+```dockerfile
+FROM python:3.13-alpine
+FROM node:22-alpine
+FROM golang:1.23-alpine AS build
+```
+
+Streamline rules — every Dockerfile should:
+
+- **Multi-stage build** when producing a binary or compiled artifact. Build stage on toolchain image, final stage on minimal runtime (`alpine:<version>` or `scratch` for static binaries). Never ship the toolchain.
+- **Single `RUN` chain for installs** with cleanup in same layer: `apk add --no-cache <pkgs>`. Never leave package cache, build deps, or temp files in final image.
+- **`--no-cache` on `apk`**, `--no-install-recommends` if Debian-based exception applies, `pip install --no-cache-dir`, `npm ci --omit=dev`.
+- **Drop build-only deps** before final stage. Use `apk add --virtual .build-deps <...>` then `apk del .build-deps` in same layer when build deps cannot be staged.
+- **Pin base image tag** — exact version, not floating `:latest` or major-only. SHA-pin (`alpine:3.20@sha256:...`) where reproducibility matters.
+- **Non-root user** in final stage (`adduser -D -H app && USER app`).
+- **`.dockerignore`** present and tight — exclude `.git/`, tests, dev configs, lockfile-ignored artifacts.
+
+When Alpine is **not** viable, document why in `Dockerfile` comment and pick the smallest alternative — `-slim` Debian variants, `distroless`, or `scratch`. Common Alpine blockers: glibc-only binaries (use `gcompat` or pick `-slim`), CUDA/GPU runtimes, vendor-supplied images without Alpine variant, Python wheels without musl builds (build from sdist or use `-slim`).
+
 ---
 
 ## 6. Dependabot
@@ -487,6 +519,7 @@ When auditing repositories, look for:
   pushed from `tag.yml` (or `:release` pushed from `push.yml`) = mutable-pointer
   crossover, also drift.
 - Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical antipattern.
+- Dockerfile using non-Alpine base when Alpine variant exists and no documented blocker (§5.3). Toolchain image as final stage = drift. Build-only deps left in final layer = drift. Floating/major-only base tag = drift. Missing `.dockerignore` = drift. Root user in final stage = drift.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.
 - Commit subjects with punctuation/symbols beyond the `type(scope):` separator — parentheses, brackets, slashes, quotes, backticks, em-dashes, lists, multi-clause "X and Y" enumerations (§7).

@@ -402,7 +402,9 @@ Canonical template (root or `.github/`):
 
 ## 15. Dependency Policy
 
-- **Always upgrade to latest** where compatible. Dependabot configured aggressively (weekly minimum, daily acceptable).
+- **Always upgrade to latest.** Dependabot configured aggressively (weekly minimum, daily acceptable). Push every dependency and module to its newest available version whenever possible.
+- **Backwards compatibility is not a concern.** Do not hold back upgrades to preserve compat with older callers, older runtimes, older sibling repositories, or deprecated APIs. Bump, adapt call sites, move on. No compat shims, no version-guarded branches, no deprecated-API retention.
+- **Tiebreaker — strict interdependency requirements.** When two newest versions conflict (e.g. lib A's latest needs lib B `<5`, lib B's latest is `6`), resolve by strict interdep constraints only. Pick the combination that satisfies hard requirements while keeping the rest of the graph as fresh as possible. Never pick an older version for any reason other than an unsatisfiable constraint.
 - Pin to exact versions when ecosystem allows; avoid range operators (`^`, `~`, `>=`) in production manifests.
 - **Lockfiles not committed.** Add to `.gitignore`: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `Gemfile.lock`, `Cargo.lock` (binary projects only — libraries follow Rust convention). Exceptions: Go `go.sum` (different semantics — commit), Python `uv.lock` (commit per §21).
 
@@ -492,6 +494,7 @@ When auditing repositories, look for:
 - Commit body lines >100 chars (commitlint `body-max-line-length` default).
 - Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.2).
 - Lockfiles committed (except `go.sum` and `uv.lock`).
+- Dependencies pinned below latest available without an unsatisfiable interdep constraint forcing it (§15). Compat-driven version holds = drift.
 - Coverage <100% on unit tests.
 - Presence of `CHANGELOG.md` (should not exist).
 - Presence of `pre-commit`/`husky`/`lefthook` config (should not exist).

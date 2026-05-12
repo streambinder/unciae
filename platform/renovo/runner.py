@@ -7,9 +7,13 @@ import functools
 import hashlib
 import os
 import platform
+import shlex
 import shutil
-from collections.abc import AsyncGenerator, Callable, Coroutine
+import tempfile
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator
+from contextlib import contextmanager
 from getpass import getpass
+from pathlib import Path
 from typing import Any, cast
 
 import anyio
@@ -98,13 +102,22 @@ async def print_stream(
         print_line(program, line.decode().rstrip(), color)
 
 
-async def write_stdin(stdin: asyncio.StreamWriter | None = None) -> None:
-    if not stdin:
-        return
-
-    stdin.write(get_pass().encode("utf-8") + b"\n")
-    await stdin.drain()
-    stdin.close()
+@contextmanager
+def askpass_helper(password: str) -> Iterator[str]:
+    # tmp dir 0700, helper script prints password to stdout for SUDO_ASKPASS
+    # both brew's child sudo invocations and ours pick this up via env
+    tmp = Path(tempfile.mkdtemp(prefix="renovo-"))
+    tmp.chmod(0o700)
+    helper = tmp / "askpass.sh"
+    helper.write_text(f"#!/bin/sh\nprintf %s {shlex.quote(password)}\n")
+    helper.chmod(0o700)
+    try:
+        yield str(helper)
+    finally:
+        try:
+            helper.unlink()
+        finally:
+            tmp.rmdir()
 
 
 def dep(
@@ -127,15 +140,14 @@ def dep(
 
             print_line(program, "upgrading...")
             async for p_args, p_kwargs in func():
-                sudo = p_args[0] == "sudo"
-                if sudo:
-                    p_args.insert(1, "-S")
+                # SUDO_ASKPASS in env; -A makes sudo call helper for password (no tty needed)
+                if p_args[0] == "sudo":
+                    p_args.insert(1, "-A")
 
                 if process := await spawn(*p_args, **p_kwargs):
                     assert process.stdout is not None
                     assert process.stderr is not None
                     await asyncio.gather(
-                        write_stdin(process.stdin if sudo else None),
                         print_stream(process.stdout, program),
                         print_stream(process.stderr, program, "red"),
                     )
@@ -207,30 +219,37 @@ async def is_sudo_required() -> bool:
     return False
 
 
-async def sudo() -> None:
-    if await is_sudo_required():
-
-        async def raise_on_auth_error(stream: asyncio.StreamReader) -> None:
-            while line := await stream.readline():
-                if "incorrect password" in line.decode().rstrip().lower():
-                    raise click.ClickException("Authentication failed. Please try again.")
-
-        if process := await spawn("sudo", "-S", "echo", "-n"):
-            assert process.stderr is not None
-            await asyncio.gather(
-                write_stdin(process.stdin),
-                raise_on_auth_error(process.stderr),
-            )
+async def verify_sudo() -> None:
+    # validate password by running sudo -A -v; raises if helper returns wrong creds
+    proc = await asyncio.create_subprocess_exec(
+        "sudo",
+        "-A",
+        "-v",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise click.ClickException(
+            f"Authentication failed: {stderr.decode().strip() or 'unknown error'}"
+        )
 
 
 @click.command()
 async def renovo() -> None:
-    if await is_sudo_required():
-        await sudo()
+    needs_sudo = await is_sudo_required()
+    if not needs_sudo:
+        async with asyncio.TaskGroup() as upgrades:
+            for fn in DEP_FNS:
+                upgrades.create_task(fn())
+        return
 
-    async with asyncio.TaskGroup() as upgrades:
-        for fn in DEP_FNS:
-            upgrades.create_task(fn())
+    with askpass_helper(get_pass()) as helper:
+        os.environ["SUDO_ASKPASS"] = helper
+        await verify_sudo()
+        async with asyncio.TaskGroup() as upgrades:
+            for fn in DEP_FNS:
+                upgrades.create_task(fn())
 
 
 if __name__ == "__main__":

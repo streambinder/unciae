@@ -320,6 +320,7 @@ Defaults: weekly schedule, grouped minor/patch updates per ecosystem to reduce P
 - One logical change per commit. No "misc fixes".
 - PR title = top commit subject.
 - Per-repository `commitlint` config aligned with above (suggest adding if missing).
+- **CI-failure fixups: amend, never new commit.** When a pushed commit's CI fails (lint, format, test, build), fix locally, `git commit --amend` (re-sign), `git push --force-with-lease`. Applies on every branch including `master`. Keeps history bisect-clean — no "fix lint" / "fix CI" trailing commits. Use `--force-with-lease` (not `--force`) to abort if remote moved.
 
 ---
 
@@ -458,8 +459,10 @@ A change is **done** only when all of:
    branch filters matching the pushed ref), track the run kicked off by the push until
    it completes. Tail with `gh run watch` on the run for the pushed SHA, or poll
    `gh run list --branch <branch> --commit <sha>` until conclusion. On failure: surface
-   logs (`gh run view --log-failed`), do not declare done. On success: report run URL
-   plus conclusion. Skip only if no `push`-triggered workflow matches the pushed ref.
+   logs (`gh run view --log-failed`), do not declare done. Fix locally, then
+   `git commit --amend` (re-sign) and `git push --force-with-lease` — per §7.
+   Re-track new run on amended SHA. On success: report run URL plus conclusion.
+   Skip only if no `push`-triggered workflow matches the pushed ref.
 
 Don't mark complete or commit otherwise.
 
@@ -525,6 +528,7 @@ When auditing repositories, look for:
 - Commit subjects with punctuation/symbols beyond the `type(scope):` separator — parentheses, brackets, slashes, quotes, backticks, em-dashes, lists, multi-clause "X and Y" enumerations (§7).
 - Verbose commit bodies restating the diff.
 - Commit body lines >100 chars (commitlint `body-max-line-length` default).
+- "fix CI" / "fix lint" / "address review" trailing fixup commits in recent history — should have been amended into the failing commit (§7).
 - Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.2).
 - Lockfiles committed (except `go.sum` and `uv.lock`).
 - Dependencies pinned below latest available without an unsatisfiable interdep constraint forcing it (§15). Compat-driven version holds = drift.

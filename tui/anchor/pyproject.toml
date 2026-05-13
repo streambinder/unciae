@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "anchor"
+version = "0.1.0"
+description = "Three-tier TUI line manager — stdout, anchors, lots"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "GPL-3.0-or-later" }
+dependencies = ["colorama>=0.4.6"]
+
+[dependency-groups]
+dev = ["mypy", "pytest", "types-colorama"]
+
+# flat layout: anchor.py + __init__.py at this dir -> wheel module `anchor`
+[tool.hatch.build.targets.wheel]
+packages = []
+force-include = { "anchor.py" = "anchor/anchor.py", "__init__.py" = "anchor/__init__.py", "py.typed" = "anchor/py.typed" }
+
+[tool.mypy]
+strict = true
+files = ["anchor.py", "__init__.py", "test_anchor.py"]

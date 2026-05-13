@@ -454,7 +454,12 @@ A change is **done** only when all of:
 5. Docs updated. If repository has `docs/` folder (or external docs site), audit
    whether change impacts documented behavior, APIs, config, CLI flags, schemas, or
    examples. Update affected pages in same commit/PR. Stale docs block done.
-6. **Post-push CI green.** If pushed to a remote whose repository defines workflows
+6. **Local CI green before push.** Reproduce the repository's `push.yml` workflow
+   locally per §22 and confirm every job that would fire on the pending push
+   passes. Each amend-on-CI-failure (per §7) doubles Actions minutes consumption,
+   so a remote run is not the first signal — local reproduction is. Push only
+   after local green.
+7. **Post-push CI green.** If pushed to a remote whose repository defines workflows
    triggered by `push` (check `.github/workflows/*.yml` for `on: push` — including
    branch filters matching the pushed ref), track the run kicked off by the push until
    it completes. Tail with `gh run watch` on the run for the pushed SHA, or poll
@@ -639,5 +644,51 @@ Add to §20 audit list:
 - Python source file without type annotations or without `from __future__ import annotations`.
 - CI workflow invoking `pip`, `poetry`, `pipenv`.
 - Path source (`{ path = ... }`) committed in `pyproject.toml` (allowed only in gitignored `uv.toml` overrides).
+
+---
+
+## 22. Local CI Reproduction — Pre-Push Discipline
+
+Every push that fails CI costs Actions minutes twice: once for the failing run, once for the re-run after `--amend` + `--force-with-lease` (mandated per §7). Multiply by branch lifetime and the burn dwarfs the cost of running the same checks locally first. **Reproduce CI locally before every push.** Push only on local green.
+
+### 22.1 Tooling Hierarchy
+
+Pick the cheapest tool that exercises the failing surface. Escalate only when a cheaper layer can't reproduce the failure.
+
+1. **Native CLI** — direct invocation of the underlying tool (`gofumpt -l -e .`, `uv run mypy --strict`, `flutter analyze`, `cargo fmt --check`, `prettier --check .`). Fastest, no container overhead. Use for single-language checks where the workflow step is a thin wrapper around the CLI.
+2. **`super-linter` standalone container** — pull `ghcr.io/super-linter/super-linter:slim-v8` (or the SHA pinned in `push.yml`), mount repository at `/tmp/lint`, set `RUN_LOCAL=true` + same `VALIDATE_*` env as the workflow. Reproduces the exact lint matrix without spinning a runner. Use when super-linter is the failing job and native CLI doesn't cover the linter (e.g. `commitlint`, `jscpd`, `gitleaks`).
+3. **`act`** — runs the workflow YAML in a runner-like container. Most faithful reproduction; handles paths-filter, secrets, multi-job dependency graph. Use when the failing job is composite (setup-go + cache + custom script), when interaction between jobs matters, or when a non-super-linter job needs validation. Slowest and heaviest — last resort, not first.
+
+### 22.2 `act` Setup (Canonical)
+
+- **Install**: `brew install act` (macOS), `gh extension install nektos/gh-act` (cross-platform via gh).
+- **Global config** at `~/.actrc`:
+  - Pin runner image `ghcr.io/catthehacker/ubuntu:act-latest` for `ubuntu-latest` (medium image — ships node/python/go/Docker preinstalled; small image lacks tooling super-linter needs).
+  - Force `--container-architecture linux/amd64` on Apple Silicon hosts (GitHub-hosted runners are amd64; QEMU emulation cost is acceptable vs. CI-minute burn).
+  - `--pull=false` to skip registry hits after first pull.
+- **Per-repo `.secrets`** — gitignored (globally via `~/.config/git/ignore`, never per-repo `.gitignore` — keeps repository `.gitignore` clean). Minimum: `GITHUB_TOKEN=$(gh auth token)`. Add other `secrets.*` referenced by jobs you intend to exercise locally.
+- **Default event = `pull_request`**. Every `push.yml` in this monorepo gates publish/notify jobs with `if: github.event_name == 'push' && github.ref == 'refs/heads/master'` (per §11.1) — so `act pull_request` runs only the cheap validation half. Reserve `act push` for rehearsing master-only deploy paths.
+
+### 22.3 Pre-Push Workflow
+
+Before every `git push`:
+
+1. Identify the jobs in `push.yml` that the change would trigger (consult `paths-filter` block; mirror the globs).
+2. Run each in cheapest-tool order per §22.1.
+3. On failure: fix, `git commit --amend` (per §7 — same rule applies before push as after), re-run locally. Repeat until green.
+4. Push only on local green.
+
+### 22.4 What Not to Do
+
+- **Don't skip local CI because "it'll probably pass"**. The amend cycle cost is the same regardless of intent; locally validating is always cheaper than the second remote run.
+- **Don't install pre-commit / pre-push framework hooks** (per §13). Plain shell hook in `.git/hooks/pre-push` allowed if you want auto-invocation, but it lives outside the repository — don't propose checking it in.
+- **Don't skip jobs that QEMU makes slow** (multi-arch Docker buildx, Flutter on M1). Run the single-arch / native variant locally; trust CI for the multi-arch fan-out (those steps are master-gated and run once, not per amend).
+- **Don't disable jobs in `push.yml` to make local easier**. The CI matrix is the source of truth; local tooling adapts to it.
+
+### 22.5 Drift Signals (add to §20)
+
+- Recent `master` history shows fixup commits with subjects like `fix(ci):`, `fix(lint):`, `chore: format` — symptom of pushing without local CI run, then amending.
+- Repository accumulates `.github/workflows/*.yml` that have no documented local-reproduction path (native CLI, super-linter env, or `act` job filter). Every CI job should be runnable locally; if it isn't, that's the gap to close.
+- Contributor docs (per-repo `CONTRIBUTING.md` or `README`) reference "push and check CI" as the validation step instead of local reproduction.
 
 ---

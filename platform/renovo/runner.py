@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import hashlib
 import os
 import platform
 import shlex
 import shutil
+import sys
 import tempfile
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator
 from contextlib import contextmanager
@@ -18,29 +18,13 @@ from typing import Any, cast
 
 import anyio
 import asyncclick as click
-from termcolor import colored
+from anchor import Lot, Red, Window
 
 CommandSpec = tuple[list[str], dict[str, Any]]
 CommandGenerator = AsyncGenerator[CommandSpec, None]
-DepFn = Callable[[], Coroutine[Any, Any, None]]
+DepFn = Callable[[Window], Coroutine[Any, Any, None]]
 
 DEP_FNS: set[DepFn] = set()
-SHELL_COLORS = [
-    "green",
-    "yellow",
-    "blue",
-    "magenta",
-    "cyan",
-    "light_green",
-    "light_yellow",
-    "light_blue",
-    "light_magenta",
-    "light_cyan",
-]
-
-
-def color_by_name(keyword: str) -> str:
-    return SHELL_COLORS[sum(hashlib.md5(keyword.encode()).hexdigest().encode()) % len(SHELL_COLORS)]
 
 
 def only_once(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -73,18 +57,6 @@ def is_exec(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def print_line(program: str, line: str, color: str | None = None) -> None:
-    if not line:
-        return
-
-    color = color if color else color_by_name(program)
-    print(
-        colored(program, color, attrs=["bold"]),
-        colored(line, color),
-        flush=True,
-    )
-
-
 async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
     return await asyncio.create_subprocess_exec(
         *args,
@@ -95,11 +67,18 @@ async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
     )
 
 
-async def print_stream(
-    stream: asyncio.StreamReader, program: str, color: str | None = None
-) -> None:
+async def stream_to_lot(stream: asyncio.StreamReader, lot: Lot) -> None:
     while line := await stream.readline():
-        print_line(program, line.decode().rstrip(), color)
+        decoded = line.decode().rstrip()
+        if decoded:
+            lot.print(decoded)
+
+
+async def stream_to_anchor(stream: asyncio.StreamReader, window: Window, program: str) -> None:
+    while line := await stream.readline():
+        decoded = line.decode().rstrip()
+        if decoded:
+            window.anchor_printf(f"{program}: {decoded}")
 
 
 @contextmanager
@@ -133,26 +112,32 @@ def dep(
         valid_cmd = is_exec(cmd or program)
 
         @functools.wraps(func)
-        async def wrapper_dep(*args: Any, **kwargs: Any) -> None:
+        async def wrapper_dep(window: Window) -> None:
             if not (valid_cmd and valid_os and valid_env):
-                print_line(program, "is unsupported")
+                window.printf(f"{program} is unsupported")
                 return
 
-            print_line(program, "upgrading...")
-            async for p_args, p_kwargs in func():
-                # SUDO_ASKPASS in env; -A makes sudo call helper for password (no tty needed)
-                if p_args[0] == "sudo":
-                    p_args.insert(1, "-A")
+            lot = window.lot(program)
+            lot.print("upgrading...")
+            try:
+                async for p_args, p_kwargs in func():
+                    # SUDO_ASKPASS in env; -A makes sudo call helper for password (no tty needed)
+                    if p_args[0] == "sudo":
+                        p_args.insert(1, "-A")
 
-                if process := await spawn(*p_args, **p_kwargs):
-                    assert process.stdout is not None
-                    assert process.stderr is not None
-                    await asyncio.gather(
-                        print_stream(process.stdout, program),
-                        print_stream(process.stderr, program, "red"),
-                    )
-
-            print_line(program, "upgrade complete.")
+                    if process := await spawn(*p_args, **p_kwargs):
+                        assert process.stdout is not None
+                        assert process.stderr is not None
+                        await asyncio.gather(
+                            stream_to_lot(process.stdout, lot),
+                            stream_to_anchor(process.stderr, window, program),
+                        )
+            except Exception as exc:
+                # logic/runtime errors share the sticky error tier with stderr
+                window.anchor_printf(f"{program}: {exc}")
+                lot.close("failed")
+                return
+            lot.close("upgrade complete.")
 
         wrapped = cast(DepFn, wrapper_dep)
         DEP_FNS.add(wrapped)
@@ -219,8 +204,8 @@ async def is_sudo_required() -> bool:
     return False
 
 
-async def verify_sudo() -> None:
-    # validate password by running sudo -A -v; raises if helper returns wrong creds
+async def verify_sudo(window: Window) -> bool:
+    # validate password by running sudo -A -v; helper returns wrong creds → false
     proc = await asyncio.create_subprocess_exec(
         "sudo",
         "-A",
@@ -230,26 +215,36 @@ async def verify_sudo() -> None:
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise click.ClickException(
-            f"Authentication failed: {stderr.decode().strip() or 'unknown error'}"
-        )
+        window.anchor_printf(f"sudo: {stderr.decode().strip() or 'authentication failed'}")
+        return False
+    return True
 
 
 @click.command()
-async def renovo() -> None:
-    needs_sudo = await is_sudo_required()
-    if not needs_sudo:
-        async with asyncio.TaskGroup() as upgrades:
-            for fn in DEP_FNS:
-                upgrades.create_task(fn())
-        return
+@click.option(
+    "--anchor/--no-anchor",
+    default=None,
+    help="Force anchored TUI on/off. Default: auto (on if stdout is a tty).",
+)
+async def renovo(anchor: bool | None) -> None:
+    with Window(Red) as window:
+        if anchor is False or (anchor is None and not sys.stdout.isatty()):
+            window.enable_plain_mode()
 
-    with askpass_helper(get_pass()) as helper:
-        os.environ["SUDO_ASKPASS"] = helper
-        await verify_sudo()
-        async with asyncio.TaskGroup() as upgrades:
-            for fn in DEP_FNS:
-                upgrades.create_task(fn())
+        async def run_all() -> None:
+            async with asyncio.TaskGroup() as upgrades:
+                for fn in DEP_FNS:
+                    upgrades.create_task(fn(window))
+
+        if not await is_sudo_required():
+            await run_all()
+            return
+
+        with askpass_helper(get_pass()) as helper:
+            os.environ["SUDO_ASKPASS"] = helper
+            if not await verify_sudo(window):
+                return
+            await run_all()
 
 
 if __name__ == "__main__":

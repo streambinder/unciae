@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -111,6 +112,27 @@ func cleanupSandbox(path string) {
 	}
 }
 
+// forge (and other agentic clients) embed the caller's working directory in
+// the system prompt so the model can resolve relative paths. Honour that hint
+// when present so claude's file tools see the same cwd the user is in.
+var cwdHintRE = regexp.MustCompile(`<current_working_directory>\s*(.+?)\s*</current_working_directory>`)
+
+func extractCwd(messages []ChatMessage) string {
+	for _, m := range messages {
+		match := cwdHintRE.FindStringSubmatch(m.Content)
+		if len(match) < 2 {
+			continue
+		}
+		candidate := strings.TrimSpace(match[1])
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		return candidate
+	}
+	return ""
+}
+
 func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan string, error) {
 	system, prompt := collapseMessages(req.Messages)
 
@@ -119,38 +141,51 @@ func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan stri
 		model = "sonnet"
 	}
 
-	// claude inherits cwd-derived project state (CLAUDE.md, git repo,
-	// hooks) from the caller, which can trigger interactive policy prompts
-	// that block headless -p runs. Sandbox each invocation in a fresh
-	// tempdir to keep the CLI environment-clean.
-	sandbox, err := os.MkdirTemp("", "ianua-claude-")
-	if err != nil {
-		return nil, fmt.Errorf("claude sandbox dir: %w", err)
+	// Prefer the caller's actual working dir (extracted from the system prompt
+	// hint forge and friends inject) so file tools resolve relative paths the
+	// way the user expects. When no hint is present, sandbox the invocation in
+	// a fresh tempdir to keep CLAUDE.md auto-discovery / hooks from triggering
+	// interactive policy prompts that would block headless -p runs.
+	workDir := extractCwd(req.Messages)
+	var sandbox string
+	if workDir == "" {
+		s, err := os.MkdirTemp("", "ianua-claude-")
+		if err != nil {
+			return nil, fmt.Errorf("claude sandbox dir: %w", err)
+		}
+		sandbox = s
+		workDir = s
 	}
 
 	// args are passed as separate argv to exec.Command — not interpolated into
 	// a shell. Caller-controlled model/prompt/system are inert here.
 	// #nosec G204
 	cmd := exec.CommandContext(ctx, "claude", claudeArgs(model, prompt, system, req.Effort())...)
-	cmd.Dir = sandbox
+	cmd.Dir = workDir
 	cmd.Stderr = io.Discard
 	cmd.Stdin = strings.NewReader("")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		cleanupSandbox(sandbox)
+		if sandbox != "" {
+			cleanupSandbox(sandbox)
+		}
 		return nil, fmt.Errorf("claude stdout pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		cleanupSandbox(sandbox)
+		if sandbox != "" {
+			cleanupSandbox(sandbox)
+		}
 		return nil, fmt.Errorf("claude start: %w", err)
 	}
 
 	out := make(chan string, 16)
 	go func() {
 		defer close(out)
-		defer cleanupSandbox(sandbox)
+		if sandbox != "" {
+			defer cleanupSandbox(sandbox)
+		}
 		defer func() {
 			if err := cmd.Wait(); err != nil {
 				// claude often exits non-zero on context cancel; debug only.

@@ -154,9 +154,10 @@ func writeJSON(w http.ResponseWriter, id string, created int64, model string, de
 
 func main() {
 	port := flag.Int("port", 8080, "listen port")
+	claudeExtra := flag.String("claude-extra-args", "", "extra args prepended to every claude invocation (whitespace-split, no quoting)")
 	flag.Parse()
 
-	registerBackend(ClaudeBackend{})
+	registerBackend(ClaudeBackend{ExtraArgs: strings.Fields(*claudeExtra)})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", handleModels)

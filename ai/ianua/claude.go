@@ -13,7 +13,12 @@ import (
 	"strings"
 )
 
-type ClaudeBackend struct{}
+type ClaudeBackend struct {
+	// ExtraArgs are prepended to every claude invocation. Configured via the
+	// -claude-extra-args CLI flag so users can mirror their shell alias (e.g.
+	// `--dangerously-skip-permissions`) without ianua having to source rc files.
+	ExtraArgs []string
+}
 
 func (ClaudeBackend) Name() string { return "claude" }
 
@@ -40,14 +45,16 @@ var claudeEffortLevels = map[string]struct{}{
 	"low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {},
 }
 
-func claudeArgs(model, prompt, system, effort string) []string {
-	args := []string{
+func claudeArgs(model, prompt, system, effort string, extra []string) []string {
+	args := append([]string{}, extra...)
+	args = append(
+		args,
 		"-p", strings.TrimSpace(prompt),
 		"--model", model,
 		"--output-format", "stream-json",
 		"--verbose",
 		"--no-session-persistence",
-	}
+	)
 	if _, ok := claudeEffortLevels[effort]; ok {
 		args = append(args, "--effort", effort)
 	}
@@ -160,7 +167,7 @@ func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan stri
 	// args are passed as separate argv to exec.Command — not interpolated into
 	// a shell. Caller-controlled model/prompt/system are inert here.
 	// #nosec G204
-	cmd := exec.CommandContext(ctx, "claude", claudeArgs(model, prompt, system, req.Effort())...)
+	cmd := exec.CommandContext(ctx, "claude", claudeArgs(model, prompt, system, req.Effort(), c.ExtraArgs)...)
 	cmd.Dir = workDir
 	cmd.Stderr = io.Discard
 	cmd.Stdin = strings.NewReader("")

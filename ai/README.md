@@ -409,13 +409,14 @@ Canonical template (root or `.github/`):
 ```markdown
 # <RepoName> <a href="<docs-url-or-repo-url>"><img alt="documentation" align="left" src="<owner-avatar-url>"></a>
 
-<one-line description OR "Documentation available at [<host>](url)." OR "Documentation not available yet.">
+<one-line description>
 ```
 
 - Title-case repository name (Unicode OK).
 - Anchor logo image links to docs site if exists, else upstream/repository URL.
 - Body = single line. No install/usage/badges sections — those belong on docs site.
-- If `docs/` folder exists locally, link to hosted version.
+- If `docs/` folder exists (local or hosted), body = `Documentation available at [<host>](<url>).` pointing to hosted version.
+- Otherwise body = **project oneliner from `pyproject.toml` description field, `go.mod` module comment, `package.json` description, or `pubspec.yaml` description**. Never use placeholder text like "Documentation not available yet" — implies imminent docs that may never appear.
 
 ---
 

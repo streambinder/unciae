@@ -140,6 +140,20 @@ func extractCwd(messages []ChatMessage) string {
 	return ""
 }
 
+// extractCwdFromSystem extracts cwd from collapsed system prompt (aider embeds hint there).
+func extractCwdFromSystem(system string) string {
+	match := cwdHintRE.FindStringSubmatch(system)
+	if len(match) < 2 {
+		return ""
+	}
+	candidate := strings.TrimSpace(match[1])
+	info, err := os.Stat(candidate)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return candidate
+}
+
 func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan string, error) {
 	system, prompt := collapseMessages(req.Messages)
 
@@ -153,7 +167,10 @@ func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan stri
 	// way the user expects. When no hint is present, sandbox the invocation in
 	// a fresh tempdir to keep CLAUDE.md auto-discovery / hooks from triggering
 	// interactive policy prompts that would block headless -p runs.
-	workDir := extractCwd(req.Messages)
+	workDir := extractCwdFromSystem(system)
+	if workDir == "" {
+		workDir = extractCwd(req.Messages) // fallback to raw messages (legacy)
+	}
 	var sandbox string
 	if workDir == "" {
 		s, err := os.MkdirTemp("", "ianua-claude-")

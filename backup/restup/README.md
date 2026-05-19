@@ -74,7 +74,7 @@ The whole script purpose was to be able to configure in a flexible and simple wa
 I personally use it as a scheduled command as a `crontab` entry:
 
 ```bash
-0 2 * * * /path/to/restup/runner.py
+0 2 * * * /path/to/restup/main.py
 ```
 
-By default, the script will be looking for the `config.yml` in the same directory as it is in (`/path/to/restup/` in the example). Otherwise you can give it yourself as first argument: `/path/to/restup/runner.py /path/to/config.yml`).
+By default, the script will be looking for the `config.yml` in the same directory as it is in (`/path/to/restup/` in the example). Otherwise you can give it yourself as first argument: `/path/to/restup/main.py /path/to/config.yml`).

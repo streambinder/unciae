@@ -22,7 +22,7 @@ func main() {
 		Short: "Fetch and insert lyrics of tracks into MP3 files metadata",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var uslt = getStdin()
+			uslt := getStdin()
 			for _, path := range args {
 				log.Printf("Processing %s...\n", path)
 				tag, tagErr := openTag(path, id3v2.Options{Parse: true})

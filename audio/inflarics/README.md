@@ -14,7 +14,7 @@ export GENIUS_TOKEN=XOLEQGXRSQRUPLVXPZRBOFACZBCPVDXPZHQOAMSYOCDGCIQUBSPLJFKNXBMJ
 Then, run the tool by path:
 
 ```bash
-go run ./inflarics/runner.go \
+go run ./inflarics/main.go \
     track.mp3 [-a artist_name] [-t track_title]
 ```
 

@@ -18,8 +18,8 @@ immich = { git = "https://github.com/streambinder/unciae.git", branch = "master"
 
 [tool.hatch.build.targets.wheel]
 packages = []
-force-include = { "runner.py" = "immich_refresh_assets/runner.py" }
+force-include = { "main.py" = "immich_refresh_assets/main.py" }
 
 [tool.mypy]
 strict = true
-files = ["runner.py"]
+files = ["main.py"]

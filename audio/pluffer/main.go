@@ -10,9 +10,7 @@ import (
 	spotify "github.com/zmb3/spotify/v2"
 )
 
-var (
-	argTimes int
-)
+var argTimes int
 
 func init() {
 	flag.IntVar(&argTimes, "t", 1, "How many shufflings to do")
@@ -64,7 +62,8 @@ func main() {
 					spotify.PlaylistReorderOptions{
 						RangeStart:   spotify.Numeric(srcIndex),
 						InsertBefore: spotify.Numeric(dstIndex),
-					}); err != nil {
+					},
+				); err != nil {
 					log.Printf("Playlist %s: %s\n", playlist.Name, err.Error())
 				} else {
 					carbonCopySlice = reorderSliceItem(carbonCopySlice, srcIndex, dstIndex)

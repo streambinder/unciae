@@ -328,14 +328,14 @@ Defaults: weekly schedule, grouped minor/patch updates per ecosystem to reduce P
 
 Respect language-idiomatic layout. **Do not force uniform `src/` across all stacks.**
 
-| Lang             | Layout                                                                                                                                                                                                                                                                                  |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Go               | [Standard Go Project Layout](https://github.com/golang-standards/project-layout): `cmd/`, `internal/`, `pkg/`, flat packages — no `src/`                                                                                                                                                |
-| TS/JS (lib)      | `src/` + `dist/`, ESM, `package.json` `exports` field                                                                                                                                                                                                                                   |
-| TS/JS (Node app) | `src/`, `tests/`, build to `dist/`                                                                                                                                                                                                                                                      |
-| Python           | [src-layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/): `src/<pkg>/`, `tests/`, `pyproject.toml`. Exception: single-file tool runners (e.g. `unciae/<category>/<tool>/runner.py`) use flat layout — `runner.py` + `pyproject.toml` adjacent (§21). |
-| Dart/Flutter     | `lib/`, `test/`, `assets/`, idiomatic Flutter structure                                                                                                                                                                                                                                 |
-| Rust             | Cargo conventions: `src/`, `tests/`, `examples/`                                                                                                                                                                                                                                        |
+| Lang             | Layout                                                                                                                                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go               | [Standard Go Project Layout](https://github.com/golang-standards/project-layout): `cmd/`, `internal/`, `pkg/`, flat packages — no `src/`                                                                                                                                            |
+| TS/JS (lib)      | `src/` + `dist/`, ESM, `package.json` `exports` field                                                                                                                                                                                                                               |
+| TS/JS (Node app) | `src/`, `tests/`, build to `dist/`                                                                                                                                                                                                                                                  |
+| Python           | [src-layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/): `src/<pkg>/`, `tests/`, `pyproject.toml`. Exception: single-file tool runners (e.g. `unciae/<category>/<tool>/main.py`) use flat layout — `main.py` + `pyproject.toml` adjacent (§21). |
+| Dart/Flutter     | `lib/`, `test/`, `assets/`, idiomatic Flutter structure                                                                                                                                                                                                                             |
+| Rust             | Cargo conventions: `src/`, `tests/`, `examples/`                                                                                                                                                                                                                                    |
 
 Tests live alongside or in idiomatic test directory per lang — pick one per repository, stay consistent.
 
@@ -574,7 +574,7 @@ All Python projects across all repositories follow this scheme. No exceptions fo
 
 ### 21.4 Layout
 
-- **Tool runner** (single-file CLI under `unciae/<category>/<tool>/`): flat — `runner.py` + `pyproject.toml` + optional `__init__.py` adjacent. Wheel exposed via `[tool.hatch.build.targets.wheel] force-include`.
+- **Tool runner** (single-file CLI under `unciae/<category>/<tool>/`): flat — `main.py` + `pyproject.toml` + optional `__init__.py` adjacent. Wheel exposed via `[tool.hatch.build.targets.wheel] force-include`.
 - **Library** (reusable, importable across repos): flat at category root (e.g. `unciae/<category>/<lib>/{api.py,__init__.py,pyproject.toml}`) or `src/<pkg>/` for non-trivial libs.
 - **App** (deployed service, e.g. `serica`): `src/<pkg>/` layout, `[project.scripts]` for entrypoints.
 - **Build tool** (e.g. `streambinder`, `erro` `.make/`): keep `.make/` directory; expose via `[tool.hatch.build.targets.wheel] packages = [".make"]` (rename via `[tool.hatch.build.targets.wheel.sources]` if dot-prefix breaks import).
@@ -629,10 +629,10 @@ For Python paths-filter match, run in order:
 
 When a Python tool is materialized on a host:
 
-- **Detect** `pyproject.toml` adjacent to `runner.py`.
-- **Hard fail** if `runner.py` exists without `pyproject.toml`. No fallback to `requirements.txt`, no fallback to bare symlink.
+- **Detect** `pyproject.toml` adjacent to `main.py`.
+- **Hard fail** if `main.py` exists without `pyproject.toml`. No fallback to `requirements.txt`, no fallback to bare symlink.
 - **Install**: `uv sync --frozen` in tool directory.
-- **Wrapper**: generated shim script `exec uv --project <dir> run python <dir>/runner.py "$@"`.
+- **Wrapper**: generated shim script `exec uv --project <dir> run python <dir>/main.py "$@"`.
 
 ### 21.11 Migration Drift Signals
 

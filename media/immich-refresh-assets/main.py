@@ -23,7 +23,7 @@ def resolve_asset_id(immich: Immich, fname: str) -> str | None:
 
 def main(fnames: list[str]) -> int:
     if not fnames:
-        print("usage: runner.py <file> [<file> ...]", file=sys.stderr)
+        print("usage: main.py <file> [<file> ...]", file=sys.stderr)
         return 2
     with Immich() as immich:
         for fname in fnames:

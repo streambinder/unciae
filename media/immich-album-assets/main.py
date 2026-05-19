@@ -10,7 +10,7 @@ from immich import Immich
 
 def main(album_ids: list[str]) -> int:
     if not album_ids:
-        print("usage: runner.py <album_id> [<album_id> ...]", file=sys.stderr)
+        print("usage: main.py <album_id> [<album_id> ...]", file=sys.stderr)
         return 2
     with Immich() as immich:
         for album_id in album_ids:

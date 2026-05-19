@@ -25,8 +25,8 @@ anchor = { git = "https://github.com/streambinder/unciae.git", branch = "master"
 
 [tool.hatch.build.targets.wheel]
 packages = []
-force-include = { "runner.py" = "renovo/runner.py" }
+force-include = { "main.py" = "renovo/main.py" }
 
 [tool.mypy]
 strict = true
-files = ["runner.py"]
+files = ["main.py"]

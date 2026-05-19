@@ -40,7 +40,7 @@ jobs:
           VALIDATE_PYTHON_BLACK: false
           VALIDATE_PYTHON_PYLINT: false
           # PYTHON_MYPY deferred until phase-2 of the §21.7 migration; super-linter
-          # invokes mypy per-file which can't reconcile sibling runner.py files
+          # invokes mypy per-file which can't reconcile sibling main.py files
           # under hyphenated tool dirs as separate modules.
           VALIDATE_PYTHON_MYPY: false
           VALIDATE_GO: false
@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           # discover every project except the .venv-shadowed roots; each pyproject
-          # owns its mypy scope via [tool.mypy] files = [...] so sibling runner.py
+          # owns its mypy scope via [tool.mypy] files = [...] so sibling main.py
           # files in adjacent projects don't collide as duplicate modules
           while IFS= read -r -d '' proj; do
             dir="$(dirname "$proj")"

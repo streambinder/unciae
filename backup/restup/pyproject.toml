@@ -16,8 +16,8 @@ dev = ["mypy", "types-PyYAML"]
 
 [tool.hatch.build.targets.wheel]
 packages = []
-force-include = { "runner.py" = "restup/runner.py" }
+force-include = { "main.py" = "restup/main.py" }
 
 [tool.mypy]
 strict = true
-files = ["runner.py"]
+files = ["main.py"]

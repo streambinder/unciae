@@ -15,7 +15,7 @@ export SPOTIFY_KEY=REDACTED
 Then, run the tool by path:
 
 ```bash
-go run ./pluffer/runner.go \
+go run ./pluffer/main.go \
     spotify:playlist:$PL1 spotify:playlist:$PL2
 ```
 

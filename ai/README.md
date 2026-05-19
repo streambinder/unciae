@@ -416,7 +416,7 @@ Canonical template (root or `.github/`):
 - Anchor logo image links to docs site if exists, else upstream/repository URL.
 - Body = single line. No install/usage/badges sections — those belong on docs site.
 - If `docs/` folder exists (local or hosted), body = `Documentation available at [<host>](<url>).` pointing to hosted version.
-- Otherwise body = **project oneliner from `pyproject.toml` description field, `go.mod` module comment, `package.json` description, or `pubspec.yaml` description**. Never use placeholder text like "Documentation not available yet" — implies imminent docs that may never appear.
+- Otherwise body = **project one-liner from `pyproject.toml` description field, `go.mod` module comment, `package.json` description, or `pubspec.yaml` description**. Never use placeholder text like "Documentation not available yet" — implies imminent docs that may never appear.
 
 ---
 

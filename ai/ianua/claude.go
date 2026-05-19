@@ -33,13 +33,22 @@ type claudeEvent struct {
 	Error  string `json:"error"`
 }
 
-func claudeArgs(model, prompt, system string) []string {
+// claude --effort accepts low|medium|high|xhigh|max. Anything else is
+// silently dropped so a misconfigured client doesn't fail-close the request.
+var claudeEffortLevels = map[string]struct{}{
+	"low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {},
+}
+
+func claudeArgs(model, prompt, system, effort string) []string {
 	args := []string{
 		"-p", strings.TrimSpace(prompt),
 		"--model", model,
 		"--output-format", "stream-json",
 		"--verbose",
 		"--no-session-persistence",
+	}
+	if _, ok := claudeEffortLevels[effort]; ok {
+		args = append(args, "--effort", effort)
 	}
 	if system != "" {
 		args = append(args, "--system-prompt", system)
@@ -122,7 +131,7 @@ func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan stri
 	// args are passed as separate argv to exec.Command — not interpolated into
 	// a shell. Caller-controlled model/prompt/system are inert here.
 	// #nosec G204
-	cmd := exec.CommandContext(ctx, "claude", claudeArgs(model, prompt, system)...)
+	cmd := exec.CommandContext(ctx, "claude", claudeArgs(model, prompt, system, req.Effort())...)
 	cmd.Dir = sandbox
 	cmd.Stderr = io.Discard
 	cmd.Stdin = strings.NewReader("")

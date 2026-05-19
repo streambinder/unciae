@@ -8,9 +8,26 @@ type ChatMessage struct {
 }
 
 type ChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Stream   bool          `json:"stream,omitempty"`
+	Model           string        `json:"model"`
+	Messages        []ChatMessage `json:"messages"`
+	Stream          bool          `json:"stream,omitempty"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	Reasoning       *struct {
+		Effort string `json:"effort,omitempty"`
+	} `json:"reasoning,omitempty"`
+}
+
+// Effort returns the reasoning effort resolved from either the flat
+// `reasoning_effort` field (OpenAI o-series) or the nested `reasoning.effort`
+// envelope (Anthropic-style). Flat field wins when both are set.
+func (r ChatRequest) Effort() string {
+	if r.ReasoningEffort != "" {
+		return r.ReasoningEffort
+	}
+	if r.Reasoning != nil {
+		return r.Reasoning.Effort
+	}
+	return ""
 }
 
 type Usage struct {

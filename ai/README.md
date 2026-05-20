@@ -59,7 +59,20 @@ Rules:
 - One canonical formatter per language per repository. Don't mix `black` and `ruff format`, or `prettier` and `biome`, in the same repository.
 - If a repository pins a different choice (per-repository `CLAUDE.md` / config), respect it — flag the divergence, don't auto-switch.
 
-### 3.2 Linter / Formatter Config Location
+### 3.2 super-linter Performance Tuning
+
+GitHub Actions minutes are the binding constraint. super-linter is the single biggest job on most repositories — tune for speed by default.
+
+- **Variant**: `super-linter/super-linter/slim@<sha>` (drops .NET / Ansible / Java images). The full image triples pull time without adding linters used here. No "slimmer" official variant exists — a hand-rolled image is not worth the maintenance.
+- **Required env knobs** (set in every super-linter step):
+  - `SAVE_SUPER_LINTER_OUTPUT: false` — skip writing per-linter logs to disk; default `true` wastes I/O on every run.
+  - `MULTI_STATUS: false` — collapse N per-linter PR statuses into one. Cuts GitHub API calls (each status is a network round-trip) and keeps the PR checks panel tidy.
+  - `LOG_LEVEL: WARN` — default `INFO` is chatty; lowers log volume and write overhead.
+- **`VALIDATE_*` disables** — only when another job in the same `push.yml` already covers that language surface (e.g. dedicated `gofumpt`/`mypy` jobs). Every disable carries a comment naming the job that replaces it.
+- **`fetch-depth: 0`** on the checkout step is required only when `VALIDATE_ALL_CODEBASE: true` (full-history scan). Keep it for master-push runs; PR runs use diff mode and don't need full history.
+- **`VALIDATE_ALL_CODEBASE`** — `true` on push to `master`, `false` on `pull_request` (the existing `!contains(github.event_name, 'pull_request')` expression is the canonical form). Don't flip — full scans are the intended safety net post-merge.
+
+### 3.3 Linter / Formatter Config Location
 
 **All super-linter-consumed config files live under `.github/linters/`.** Single dedicated dir keeps repository root clean (§2) and groups CI tooling.
 
@@ -287,6 +300,59 @@ Streamline rules — every Dockerfile should:
 
 When Alpine is **not** viable, document why in `Dockerfile` comment and pick the smallest alternative — `-slim` Debian variants, `distroless`, or `scratch`. Common Alpine blockers: glibc-only binaries (use `gcompat` or pick `-slim`), CUDA/GPU runtimes, vendor-supplied images without Alpine variant, Python wheels without musl builds (build from sdist or use `-slim`).
 
+### 5.4 Docker Build Target — `linux/arm64` Only on Native Runner
+
+**All Docker images target `linux/arm64` exclusively.** All deploy hosts under this meta-repository are arm64 (Raspberry Pi, arm servers); amd64 / armv7 builds waste CI minutes on artifacts no consumer pulls.
+
+- **`platforms: linux/arm64`** — single value, bare `arm64` (not `arm64/v8`, not multi-arch CSV).
+- **`runs-on: ubuntu-24.04-arm`** — native arm64 GitHub-hosted runner. Free for public repositories. Avoids QEMU entirely.
+- **Forbidden**: `docker/setup-qemu-action`. QEMU on x86 runner is 5–10× slower than native arm64 and burns budget for zero benefit when only arm64 is shipped.
+- **Multi-arch exception** (rare): if a specific image genuinely needs amd64 (e.g. one-off dev tooling), split into two jobs — `runs-on: ubuntu-latest` for amd64, `runs-on: ubuntu-24.04-arm` for arm64 — and merge via `docker/build-push-action` `outputs: type=image,push-by-digest=true` + `docker buildx imagetools create` manifest step. Never resort to QEMU.
+
+Bad — QEMU + multi-arch fan-out on x86:
+
+```yaml
+runs-on: ubuntu-latest
+steps:
+  - uses: docker/setup-qemu-action@<sha>
+  - uses: docker/setup-buildx-action@<sha>
+  - uses: docker/build-push-action@<sha>
+    with:
+      platforms: linux/amd64,linux/arm/v7,linux/arm64/v8
+```
+
+Good — native arm64, single platform:
+
+```yaml
+runs-on: ubuntu-24.04-arm
+steps:
+  - uses: docker/setup-buildx-action@<sha>
+  - uses: docker/build-push-action@<sha>
+    with:
+      platforms: linux/arm64
+```
+
+### 5.5 Docker Build Cache — GitHub Actions Cache Mandatory
+
+**Every `docker/build-push-action` invocation MUST set `cache-from` and `cache-to` against the GitHub Actions cache backend.** Without it, every push re-downloads `go mod` / `apk add` / `pip install` layers from scratch. 40–70% reduction on incremental builds.
+
+```yaml
+- uses: docker/build-push-action@<sha>
+  with:
+    platforms: linux/arm64
+    cache-from: type=gha
+    cache-to: type=gha,mode=max
+    tags: |
+      ghcr.io/${{ github.repository }}:latest
+      ghcr.io/${{ github.repository }}:${{ github.sha }}
+    push: ${{ github.event_name != 'pull_request' }}
+```
+
+- **`mode=max`** caches every intermediate stage, not just the final image. Multi-stage Dockerfiles (the default per §5.3) need this — `mode=min` only caches the final stage.
+- **`type=gha`** uses the same cache backend as `actions/cache`. Scoped per branch; falls back to base branch automatically.
+- **Scope collision** (multi-image repos like `vigor`): set `cache-from: type=gha,scope=<image-name>` + `cache-to: type=gha,scope=<image-name>,mode=max` per build to avoid one image evicting another's cache.
+- Pair with §5.4 — `ubuntu-24.04-arm` runner + GHA cache is the canonical build job shape.
+
 ---
 
 ## 6. Dependabot
@@ -397,6 +463,27 @@ Rules:
 - Never use `pull_request_target` to bypass this — that runs with write tokens against untrusted PR code (the exact failure mode this rule prevents).
 - Secrets needed for publishing (`secrets.REGISTRY_TOKEN`, etc.) must never be referenced inside steps reachable from a `pull_request` trigger.
 - Dry-run / build-only validation on PRs is encouraged: build the image, don't push; pack the package, don't publish.
+
+### 11.2 Concurrency Control — Cancel In-Progress on All Refs
+
+**Every `push.yml` MUST declare a top-level `concurrency:` block that cancels in-progress runs on every ref, including `master`.** Multiple rapid pushes otherwise spawn N parallel runs that race to publish the same artifact — wasted minutes and a non-deterministic "winner" at the registry.
+
+```yaml
+name: push
+
+on:
+  push: null
+  pull_request: null
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+- **Group by `workflow + ref`** — independent branches do not block each other; rapid pushes to the same ref collapse to the latest.
+- **`cancel-in-progress: true` on all refs (master included).** Rationale: with `VALIDATE_ALL_CODEBASE: true` on master, every run scans the full tree; the latest commit's run is strictly newer and supersedes the previous. The previous run's artifact would be overwritten anyway — cancel early, save the minutes.
+- **`tag.yml`** uses a different group expression (`${{ github.workflow }}-${{ github.ref_name }}`) and `cancel-in-progress: false` — releases must complete, never be cancelled mid-publish.
+- Other narrow-purpose workflows (`workflow_dispatch`, scheduled scans): add `concurrency:` when concurrent runs would conflict (shared external resource); skip when independent.
 
 ---
 
@@ -529,13 +616,17 @@ When auditing repositories, look for:
   crossover, also drift.
 - Publish steps (`docker push`, `npm publish`, `gh release create`, `terraform apply`, etc.) reachable from `pull_request` triggers without an event-gate (§11.1). `pull_request_target` used to grant write tokens to PR code = critical antipattern.
 - Dockerfile using non-Alpine base when Alpine variant exists and no documented blocker (§5.3). Toolchain image as final stage = drift. Build-only deps left in final layer = drift. Floating/major-only base tag = drift. Missing `.dockerignore` = drift. Root user in final stage = drift.
+- Docker build job using `docker/setup-qemu-action`, `platforms:` containing anything other than bare `linux/arm64`, or running on `ubuntu-latest` instead of `ubuntu-24.04-arm` (§5.4). Multi-arch fan-out via QEMU on x86 runner = critical drift; native arm64 runner mandatory.
+- Docker build job missing `cache-from: type=gha` / `cache-to: type=gha,mode=max` (§5.5). Multi-image repository missing per-image `scope=<name>` qualifier = drift.
+- `push.yml` missing top-level `concurrency:` block, or `cancel-in-progress: false`, or group expression not `${{ github.workflow }}-${{ github.ref }}` (§11.2). `tag.yml` with `cancel-in-progress: true` (releases must finish) = drift.
 - Missing `.github/dependabot.yml`, or dependabot missing ecosystems present in repository.
 - Non-Conventional commit messages in recent history.
 - Commit subjects with punctuation/symbols beyond the `type(scope):` separator — parentheses, brackets, slashes, quotes, backticks, em-dashes, lists, multi-clause "X and Y" enumerations (§7).
 - Verbose commit bodies restating the diff.
 - Commit body lines >100 chars (commitlint `body-max-line-length` default).
 - "fix CI" / "fix lint" / "address review" trailing fixup commits in recent history — should have been amended into the failing commit (§7).
-- Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.2).
+- Linter / formatter config files (`.golangci.yml`, `.eslintrc*`, `biome.json`, `commitlint.config.js`, `.codespellrc`, etc.) at repository root or scattered, instead of consolidated under `.github/linters/` with root symlinks for tools that require root discovery (§3.3).
+- super-linter step missing performance env knobs from §3.2 (`SAVE_SUPER_LINTER_OUTPUT: false`, `MULTI_STATUS: false`, `LOG_LEVEL: WARN`), or using non-`slim` variant.
 - Lockfiles committed (except `go.sum` and `uv.lock`).
 - Dependencies pinned below latest available without an unsatisfiable interdep constraint forcing it (§15). Compat-driven version holds = drift.
 - Coverage <100% on unit tests.
@@ -613,7 +704,7 @@ immich = { git = "https://github.com/streambinder/unciae.git", tag = "v0.42.0", 
 
 - **Tool**: `ruff` only — single tool for both. No `black`, no `isort`, no `flake8`, no `pylint`.
 - **CI gates**: `uv run ruff check .` + `uv run ruff format --check .`.
-- **Config**: single `.github/linters/.ruff.toml` per repository (per §3.2 — super-linter consumes it). Do NOT put `[tool.ruff]` in per-package `pyproject.toml` — it would be ignored by super-linter and cause CI/local drift.
+- **Config**: single `.github/linters/.ruff.toml` per repository (per §3.3 — super-linter consumes it). Do NOT put `[tool.ruff]` in per-package `pyproject.toml` — it would be ignored by super-linter and cause CI/local drift.
 
 ### 21.9 CI Gates (per `push.yml`)
 

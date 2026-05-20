@@ -5,6 +5,10 @@ on: # yamllint disable-line rule:truthy
   push: null
   pull_request: null
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   actions: read
   attestations: none
@@ -45,6 +49,9 @@ jobs:
           VALIDATE_PYTHON_MYPY: false
           VALIDATE_GO: false
           IGNORE_GITIGNORED_FILES: true
+          SAVE_SUPER_LINTER_OUTPUT: false
+          MULTI_STATUS: false
+          LOG_LEVEL: WARN
   mypy:
     runs-on: ubuntu-latest
     steps:

@@ -74,10 +74,13 @@ async def stream_to_lot(stream: asyncio.StreamReader, lot: Lot) -> None:
             lot.print(decoded)
 
 
-async def stream_to_anchor(stream: asyncio.StreamReader, window: Window, program: str) -> None:
+async def stream_to_anchor(
+    stream: asyncio.StreamReader, lot: Lot, window: Window, program: str
+) -> None:
     while line := await stream.readline():
         decoded = line.decode().rstrip()
         if decoded:
+            lot.print(decoded)
             window.anchor_printf(f"{program}: {decoded}")
 
 
@@ -130,7 +133,7 @@ def dep(
                         assert process.stderr is not None
                         await asyncio.gather(
                             stream_to_lot(process.stdout, lot),
-                            stream_to_anchor(process.stderr, window, program),
+                            stream_to_anchor(process.stderr, lot, window, program),
                         )
             except Exception as exc:
                 # logic/runtime errors share the sticky error tier with stderr

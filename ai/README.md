@@ -382,6 +382,10 @@ Defaults: weekly schedule, grouped minor/patch updates per ecosystem to reduce P
   - Good: `fix(api): handle nil responses on retry`
   - Good: `docs(ai): consolidate linter configs under github linters`
 - **Body: very very concise.** One short paragraph max. Skip body if subject is self-explanatory. Skip "what" — diff shows it. Only "why" if non-obvious.
+- **Body = single grammatical sentence ending in one period.** Plain prose, no commas, semicolons, colons, em-dashes, parentheses, brackets, quotes, backticks, slashes, or list markers. No enumerations — split into separate commits if the change cannot be described as one sentence. Same symbol ban as the subject (§7), applied to the body.
+  - Bad: `Switch to mono font, drop icons, rework footer.`
+  - Bad: `Rework layout: unified wrap width and hairline rules.`
+  - Good: `Switch to a single monospace identity across the site.`
 - **Body line length ≤100 chars.** Matches `commitlint` `body-max-line-length` default. Hard-wrap longer lines. Includes URLs — break or shorten.
 - One logical change per commit. No "misc fixes".
 - PR title = top commit subject.

@@ -83,3 +83,14 @@ class Immich:
             "/assets/jobs",
             json={"assetIds": list(asset_ids), "name": job_name},
         )
+
+    def libraries(self) -> list[dict[str, Any]]:
+        return cast(list[dict[str, Any]], self._request("GET", "/libraries"))
+
+    def scan_library(self, library_id: str) -> None:
+        self._request("POST", f"/libraries/{library_id}/scan")
+
+    def queue_status(self, queue: str) -> dict[str, int]:
+        # /queues/{name} added in v2.4.0 (alpha); preferred over deprecated /jobs.
+        payload = cast(dict[str, Any], self._request("GET", f"/queues/{queue}"))
+        return cast(dict[str, int], payload["statistics"])

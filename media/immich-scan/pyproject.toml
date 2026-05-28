@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "immich-scan"
+version = "0.1.0"
+description = "Trigger a scoped Immich library scan, poll until done, then run an optional hook"
+requires-python = ">=3.13"
+license = { text = "GPL-3.0-or-later" }
+dependencies = ["immich"]
+
+[dependency-groups]
+dev = ["mypy"]
+
+[tool.uv.sources]
+immich = { git = "https://github.com/streambinder/unciae.git", branch = "master", subdirectory = "media/immich" }
+
+[tool.hatch.build.targets.wheel]
+packages = []
+force-include = { "main.py" = "immich_scan/main.py" }
+
+[tool.mypy]
+strict = true
+files = ["main.py"]

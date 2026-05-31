@@ -425,6 +425,7 @@ Tests live alongside or in idiomatic test directory per lang — pick one per re
 - **Primary branch**: `master`. Never assume `main`.
 - **Feature branches**: `feat/<short-name>`. Catch-all prefix — covers fixes, chores, docs too unless context strongly justifies different prefix.
 - **Signed commits**: **always**. Every commit GPG/SSH-signed.
+- **Pull with rebase**: set `pull.rebase = true` globally. Reconciles divergent branches by replaying local commits on top of upstream instead of creating merge commits — keeps history linear and bisect-clean (§7) and avoids the `fatal: Need to specify how to reconcile divergent branches` prompt. Lives in the tracked `clavis/.gitconfig` dotfile so it deploys to every machine.
 - **Tags**: `vMAJOR.MINOR.PATCH` (SemVer). No `v0` perpetual.
 - **Release flow**: tag creation triggers `tag.yml` → release artifact published. CI on `master` push / PRs runs via `push.yml`.
 - **No CHANGELOG file.** GitHub release notes auto-generated from commit history (Conventional Commits make this clean).

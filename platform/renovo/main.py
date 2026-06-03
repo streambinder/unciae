@@ -187,7 +187,7 @@ async def macos() -> CommandGenerator:
 
 @dep()
 async def yadm() -> CommandGenerator:
-    yield ["yadm", "pull"], {}
+    yield ["yadm", "pull", "--rebase"], {}
     yield ["yadm", "submodule", "update", "--init", "--recursive"], {}
     yield ["yadm", "bootstrap"], {}
 

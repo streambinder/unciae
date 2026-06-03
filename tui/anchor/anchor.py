@@ -11,14 +11,16 @@ Three line categories layered in a terminal window, bottom-anchored stack:
     3. Lots — named, mutable single-line slots at the very bottom. `Lot.print`
        overwrites in place; closing a lot freezes its content with idle style.
 
-Redraw model: the `(anchors + lots)` block is anchored via DECSC/DECRC (save/
-restore cursor). On first render we DECSC at the block's start row. Every
-subsequent operation DECRCs to that row, ED-erases to end of screen, redraws
-the whole block. For flowing lines (printf): scroll one row up (write data +
-\\n) then DECSC at the new row, render block.
+Redraw model: the `(anchors + lots)` block is positioned via relative
+cursor-up (CUU) movement, matching the Go original. We track how many rows
+the block currently occupies; on redraw we CUU that many rows, clear each
+line, then rewrite all rows top-to-bottom. For flowing lines (printf): erase
+the block, write data + \\n (pushing it into scrollback), then redraw.
 
-This sidesteps the relative-walk model entirely — no `\\x1b[1A` cursor-up math
-that desyncs at the viewport bottom edge.
+This avoids DECSC/DECRC (save/restore cursor), which uses absolute positions
+that desync when terminal scrolling pushes content into the scrollback — a
+problem that manifests after CTRL+C or when the cursor starts near the
+viewport bottom.
 
 Plain mode disables cursor manipulation and color — every print becomes a
 plain `print` line, useful for non-tty / log-capture contexts.
@@ -69,12 +71,10 @@ _IDLE = "idle"
 _DEFAULT_DONE = "done"
 
 _ESC = "\x1b["
-# DECSC / DECRC: VT100 save/restore cursor (col + row). All major terminals
-# honor these (Ghostty, xterm, macOS Terminal, etc). Beats relative cursor
-# walks because save survives terminal scroll.
-_SAVE_CURSOR = "\x1b7"
-_RESTORE_CURSOR = "\x1b8"
-_CLEAR_TO_END_OF_SCREEN = f"{_ESC}J"
+# per-line clear: move up 1, erase the line, carriage return
+_UP_AND_CLEAR = f"{_ESC}1A{_ESC}2K\r"
+_CLEAR_LINE = f"{_ESC}2K"
+_CURSOR_DOWN = f"{_ESC}1B"
 
 # strips ANSI SGR sequences for visible-width measurement
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -131,9 +131,9 @@ class Window:
         self._lock = threading.RLock()
         self._plain = False
         self._stream = stream if stream is not None else sys.stdout
-        # has the block ever rendered? if so, save point exists and we can
-        # restore. False on first render → save first, then write.
-        self._anchored = False
+        # how many rows the block currently occupies on screen. the cursor
+        # always sits at the end of the last row (bottom of the block).
+        self._block_rows = 0
 
     def enable_plain_mode(self) -> None:
         self._anchor_color = Normal
@@ -173,27 +173,24 @@ class Window:
                 return sys.stdin.readline().strip().rstrip("\r\n")
 
             # erase block to make room for the prompt
-            if self._anchored:
-                self._stream.write(_RESTORE_CURSOR + _CLEAR_TO_END_OF_SCREEN)
-                self._anchored = False
+            self._erase_block()
             prompt = (label % args if args else label) + " "
             self._stream.write(prompt)
             self._stream.flush()
             value = sys.stdin.readline().strip().rstrip("\r\n")
-            # readline's trailing \n moved cursor to next line; redraw block from here
+            # readline's trailing \n moved cursor to next line; redraw block
             self._redraw_block()
             return value
 
     def close(self) -> None:
         """Drop cursor below the block so the next external write (shell prompt
         on program exit, follow-up print, etc.) starts on a fresh line. Safe to
-        call multiple times. After close, the block is no longer anchored —
-        further window ops would re-anchor at the new cursor position."""
+        call multiple times."""
         with self._lock:
-            if self._plain or not self._anchored:
+            if self._plain or not self._block_rows:
                 return
             self._stream.write("\r\n")
-            self._anchored = False
+            self._block_rows = 0
             self._stream.flush()
 
     def __enter__(self) -> Window:
@@ -204,17 +201,29 @@ class Window:
 
     # internals
 
-    def _redraw_block(self) -> None:
-        """Restore (or save first time) at block start, clear to end of screen,
-        write all rows. Cursor lands at end of last row."""
-        if self._anchored:
-            self._stream.write(_RESTORE_CURSOR + _CLEAR_TO_END_OF_SCREEN)
-        else:
-            self._stream.write(_SAVE_CURSOR)
-            self._anchored = True
+    def _erase_block(self) -> None:
+        """Move to block start and clear each line; resets _block_rows to 0.
+        After this, the cursor is at column 0 of what was the first block row."""
+        if not self._block_rows:
+            return
+        # cursor is at end of last row. move up (block_rows - 1) times to
+        # reach the first row, clearing each line we pass through.
+        buf = [_CLEAR_LINE]  # clear the current (bottom) row
+        for _ in range(self._block_rows - 1):
+            buf.append(_UP_AND_CLEAR)
+        buf.append("\r")  # ensure column 0
+        self._stream.write("".join(buf))
+        self._block_rows = 0
 
-        rows = [_truncate(line, self._max_width()) for line in self._anchors]
-        rows.extend(_truncate(lot._render(), self._max_width()) for lot in self._lots)
+    def _redraw_block(self) -> None:
+        """Erase existing block, rewrite all rows from the current cursor.
+        Uses relative cursor movement — immune to scroll desync."""
+        self._erase_block()
+
+        max_w = self._max_width()
+        rows = [_truncate(line, max_w) for line in self._anchors]
+        rows.extend(_truncate(lot._render(), max_w) for lot in self._lots)
+        self._block_rows = len(rows)
         if rows:
             self._stream.write("\r\n".join(rows))
         self._stream.flush()
@@ -226,16 +235,11 @@ class Window:
                 self._stream.flush()
                 return
             if sticky:
-                # anchor lines stay inside the block — append + redraw, no
-                # write to scrollback. The block grows by one row.
                 self._anchors.append(data)
                 self._redraw_block()
                 return
-            # flowing line: restore to block start, clear block, write data
-            # to scrollback, re-anchor save point at next row, redraw block.
-            if self._anchored:
-                self._stream.write(_RESTORE_CURSOR + _CLEAR_TO_END_OF_SCREEN)
-                self._anchored = False
+            # flowing line: erase block, write data to scrollback, redraw
+            self._erase_block()
             self._stream.write(_truncate(data, self._max_width()) + "\r\n")
             self._redraw_block()
 

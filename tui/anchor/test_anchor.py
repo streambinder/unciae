@@ -87,11 +87,11 @@ def test_close_freezes_style() -> None:
 
 
 def test_anchored_state_after_first_render() -> None:
-    """Window starts unanchored; first render saves cursor + sets _anchored."""
+    """Window starts with no block; first render sets _block_rows > 0."""
     window = Window(stream=io.StringIO())
-    assert not window._anchored
+    assert window._block_rows == 0
     window.lot("x")
-    assert window._anchored
+    assert window._block_rows > 0
 
 
 def test_flowing_lines_keep_block_count_stable() -> None:
@@ -123,8 +123,8 @@ def test_anchor_printf_accepts_any_color(color: str) -> None:
 
 def test_no_extra_blank_lines_between_lot_prints() -> None:
     """Regression: lot.print called repeatedly must not accumulate blank rows.
-    With the save/restore-cursor model, each redraw = N-1 \\n separators
-    (rows joined by \\n, no trailing). For 20 redraws of 2 lots: 20 newlines."""
+    With the cursor-up model, each redraw = N-1 \\n separators (rows joined
+    by \\n, no trailing). For 20 redraws of 2 lots: 20 newlines."""
     buf = io.StringIO()
     window = Window(stream=buf)
     lot_a = window.lot("a")

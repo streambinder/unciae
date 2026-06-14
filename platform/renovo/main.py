@@ -197,6 +197,11 @@ async def nix() -> CommandGenerator:
     yield ["nix-env", "-u", "*"], {}
 
 
+@dep()
+async def npm() -> CommandGenerator:
+    yield ["npm", "update", "-g"], {}
+
+
 async def is_sudo_required() -> bool:
     for fn in DEP_FNS:
         # underlying generator function lives on __wrapped__ via functools.wraps

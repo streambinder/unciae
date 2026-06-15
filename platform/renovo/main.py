@@ -27,26 +27,19 @@ DepFn = Callable[[Window], Coroutine[Any, Any, None]]
 DEP_FNS: set[DepFn] = set()
 
 
-def only_once(func: Callable[..., Any]) -> Callable[..., Any]:
-    _run_attr = "_run"
-    _value_attr = "_value"
-
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        if getattr(func, _run_attr, False):
-            return getattr(func, _value_attr, None)
-
-        value = func(*args, **kwargs)
-        setattr(func, _value_attr, value)
-        setattr(func, _run_attr, True)
-        return value
-
-    return wrapper
+_cached_pass: str | None = None
 
 
-@only_once
 def get_pass(program: str | None = None) -> str:
+    if _cached_pass is not None:
+        return _cached_pass
     return getpass(f"Authenticate{' for ' + program if program else ''}: ")
+
+
+def accept_pass(password: str) -> None:
+    """cache password only after it's been verified"""
+    global _cached_pass
+    _cached_pass = password
 
 
 def is_os(os_name: str) -> bool:
@@ -212,20 +205,38 @@ async def is_sudo_required() -> bool:
     return False
 
 
-async def verify_sudo(window: Window) -> bool:
-    # validate password by running sudo -A -v; helper returns wrong creds → false
-    proc = await asyncio.create_subprocess_exec(
-        "sudo",
-        "-A",
-        "-v",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        window.anchor_printf(f"sudo: {stderr.decode().strip() or 'authentication failed'}")
-        return False
-    return True
+_MAX_AUTH_ATTEMPTS = 3
+
+
+async def verify_sudo() -> bool:
+    # runs before the TUI window exists — plain stderr for feedback.
+    # uses -S (stdin) instead of -A (askpass) so sudo reads the password once
+    # and can't retry with the same wrong value when stdin hits EOF.
+    # invalidate any cached credential first so we actually test the password.
+    await (await asyncio.create_subprocess_exec("sudo", "-k")).wait()
+    for attempt in range(_MAX_AUTH_ATTEMPTS):
+        password = get_pass()
+        proc = await asyncio.create_subprocess_exec(
+            "sudo",
+            "-S",
+            "-p",
+            "",
+            "-v",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.communicate(input=f"{password}\n".encode())
+        if proc.returncode == 0:
+            accept_pass(password)
+            return True
+        print(
+            "Sorry, try again."
+            if attempt < _MAX_AUTH_ATTEMPTS - 1
+            else "sudo: authentication failed",
+            file=sys.stderr,
+        )
+    return False
 
 
 @click.command()
@@ -235,6 +246,10 @@ async def verify_sudo(window: Window) -> bool:
     help="Force anchored TUI on/off. Default: auto (on if stdout is a tty).",
 )
 async def renovo(anchor: bool | None) -> None:
+    needs_sudo = await is_sudo_required()
+    if needs_sudo and not await verify_sudo():
+        return
+
     with Window(Red) as window:
         if anchor is False or (anchor is None and not sys.stdout.isatty()):
             window.enable_plain_mode()
@@ -244,14 +259,13 @@ async def renovo(anchor: bool | None) -> None:
                 for fn in DEP_FNS:
                     upgrades.create_task(fn(window))
 
-        if not await is_sudo_required():
+        if not needs_sudo:
             await run_all()
             return
 
+        # password verified and cached; rebuild helper for the upgrade tasks
         with askpass_helper(get_pass()) as helper:
             os.environ["SUDO_ASKPASS"] = helper
-            if not await verify_sudo(window):
-                return
             await run_all()
 
 

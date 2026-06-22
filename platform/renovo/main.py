@@ -195,6 +195,12 @@ async def npm() -> CommandGenerator:
     yield ["npm", "update", "-g"], {}
 
 
+@dep(cmd="pi")
+async def pi() -> CommandGenerator:
+    yield ["pi", "update"], {}
+    yield ["pi", "update", "--extensions"], {}
+
+
 async def is_sudo_required() -> bool:
     for fn in DEP_FNS:
         # underlying generator function lives on __wrapped__ via functools.wraps

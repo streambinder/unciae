@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mypy"]
+dev = ["mypy", "ruff"]
 
 # anchor sourced from same monorepo via git ref — bump tag in lockstep with anchor.
 # local dev: gitignored uv.toml next to this pyproject overrides with a path source.

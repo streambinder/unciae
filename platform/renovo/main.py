@@ -51,6 +51,7 @@ def is_exec(cmd: str) -> bool:
 
 
 async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+    kwargs.setdefault("env", os.environ)
     return await asyncio.create_subprocess_exec(
         *args,
         stdin=asyncio.subprocess.PIPE,
@@ -128,6 +129,12 @@ def dep(
                             stream_to_lot(process.stdout, lot),
                             stream_to_anchor(process.stderr, lot, window, program),
                         )
+                        if process.returncode and process.returncode != 0:
+                            window.anchor_printf(
+                                f"{program}: exited with code {process.returncode}"
+                            )
+                            lot.close("failed")
+                            return
             except Exception as exc:
                 # logic/runtime errors share the sticky error tier with stderr
                 window.anchor_printf(f"{program}: {exc}")

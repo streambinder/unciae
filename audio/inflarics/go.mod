@@ -8,7 +8,7 @@ require (
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/gosimple/slug v1.15.0
 	github.com/spf13/cobra v1.10.2
-	github.com/streambinder/spotitube v1.1.7
+	github.com/streambinder/spotitube v1.1.8
 )
 
 require (

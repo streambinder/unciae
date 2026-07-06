@@ -48,7 +48,9 @@ jobs:
           # under hyphenated tool dirs as separate modules.
           VALIDATE_PYTHON_MYPY: false
           VALIDATE_GO: false
-          IGNORE_GITIGNORED_FILES: true
+          # IGNORE_GITIGNORED_FILES dropped: super-linter 8.7.0 appends an
+          # unsupported --gitignore flag to the jscpd/cpd binary when it's set,
+          # crashing JSCPD. Removing it keeps copy-paste detection working.
           SAVE_SUPER_LINTER_OUTPUT: false
           MULTI_STATUS: false
           LOG_LEVEL: WARN

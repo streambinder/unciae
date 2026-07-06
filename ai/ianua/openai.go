@@ -2,6 +2,13 @@ package main
 
 // OpenAI chat completions wire format.
 
+// Wire-format constants reused across request/response construction. Kept here
+// next to the types they annotate so goconst doesn't flag the repeated literals.
+const (
+	roleAssistant = "assistant"
+	objectChunk   = "chat.completion.chunk"
+)
+
 type ChatMessage struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content"`

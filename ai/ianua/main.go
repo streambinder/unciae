@@ -104,15 +104,15 @@ func writeSSE(w http.ResponseWriter, id string, created int64, model string, del
 
 	// initial role chunk (OpenAI convention)
 	if err := send(ChatChunk{
-		ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
-		Choices: []DeltaChoice{{Delta: ChatMessage{Role: "assistant"}}},
+		ID: id, Object: objectChunk, Created: created, Model: model,
+		Choices: []DeltaChoice{{Delta: ChatMessage{Role: roleAssistant}}},
 	}); err != nil {
 		return
 	}
 
 	for d := range deltas {
 		if err := send(ChatChunk{
-			ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+			ID: id, Object: objectChunk, Created: created, Model: model,
 			Choices: []DeltaChoice{{Delta: ChatMessage{Content: d}}},
 		}); err != nil {
 			return
@@ -121,7 +121,7 @@ func writeSSE(w http.ResponseWriter, id string, created int64, model string, del
 
 	stop := "stop"
 	if err := send(ChatChunk{
-		ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+		ID: id, Object: objectChunk, Created: created, Model: model,
 		Choices: []DeltaChoice{{FinishReason: &stop}},
 	}); err != nil {
 		return
@@ -141,7 +141,7 @@ func writeJSON(w http.ResponseWriter, id string, created int64, model string, de
 		ID: id, Object: "chat.completion", Created: created, Model: model,
 		Choices: []Choice{{
 			Index:        0,
-			Message:      ChatMessage{Role: "assistant", Content: full.String()},
+			Message:      ChatMessage{Role: roleAssistant, Content: full.String()},
 			FinishReason: "stop",
 		}},
 		Usage: Usage{},

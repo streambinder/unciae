@@ -31,7 +31,7 @@ func collapseMessages(messages []ChatMessage) (system, prompt string) {
 			buf.WriteString("[USER]\n")
 			buf.WriteString(m.Content)
 			buf.WriteString("\n\n")
-		case "assistant":
+		case roleAssistant:
 			buf.WriteString("[ASSISTANT]\n")
 			buf.WriteString(m.Content)
 			buf.WriteString("\n\n")

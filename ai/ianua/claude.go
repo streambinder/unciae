@@ -20,10 +20,14 @@ type ClaudeBackend struct {
 	ExtraArgs []string
 }
 
+// modelClaude is the default model alias; requests naming it (or nothing) get
+// routed to a concrete model below.
+const modelClaude = "claude"
+
 func (ClaudeBackend) Name() string { return "claude" }
 
 func (ClaudeBackend) Models() []string {
-	return []string{"claude", "sonnet", "opus", "haiku"}
+	return []string{modelClaude, "sonnet", "opus", "haiku"}
 }
 
 // claude stream-json event shape (only fields we care about).
@@ -66,7 +70,7 @@ func claudeArgs(model, prompt, system, effort string, extra []string) []string {
 
 // extract the concatenated text content from a single assistant event.
 func eventText(ev claudeEvent) string {
-	if ev.Type != "assistant" {
+	if ev.Type != roleAssistant {
 		return ""
 	}
 	var b strings.Builder
@@ -158,7 +162,7 @@ func (c ClaudeBackend) Stream(ctx context.Context, req ChatRequest) (<-chan stri
 	system, prompt := collapseMessages(req.Messages)
 
 	model := req.Model
-	if model == "" || model == "claude" {
+	if model == "" || model == modelClaude {
 		model = "sonnet"
 	}
 

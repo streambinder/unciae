@@ -8,6 +8,7 @@ import os
 import platform
 import shlex
 import shutil
+import signal
 import sys
 import tempfile
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator
@@ -50,6 +51,9 @@ def is_exec(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+_TERM_GRACE_SECONDS = 5.0
+
+
 async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
     kwargs.setdefault("env", os.environ)
     return await asyncio.create_subprocess_exec(
@@ -57,8 +61,39 @@ async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        # own session/process group so we can signal the whole tree — brew
+        # forks curl/sudo, apt forks dpkg; signalling just the child orphans them
+        start_new_session=True,
         **kwargs,
     )
+
+
+async def terminate(process: asyncio.subprocess.Process) -> None:
+    """SIGTERM the child's process group, grace period, then SIGKILL the group.
+    Called from the cancellation path — must not itself be interrupted, so the
+    wait is shielded. Group-signalling (killpg) reaches grandchildren; a bare
+    process.terminate() would leave brew's curl/dpkg running."""
+    if process.returncode is not None:
+        return
+    try:
+        # child is its own group leader (start_new_session), so pgid == pid.
+        # asyncio holds the zombie until we wait(), so no pid reuse in between.
+        pgid = os.getpgid(process.pid)
+    except ProcessLookupError:
+        return
+    for sig, timeout in ((signal.SIGTERM, _TERM_GRACE_SECONDS), (signal.SIGKILL, None)):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return  # already gone
+        if timeout is None:
+            await asyncio.shield(process.wait())
+            return
+        try:
+            await asyncio.shield(asyncio.wait_for(process.wait(), timeout))
+            return
+        except TimeoutError:
+            continue  # survived SIGTERM, escalate to SIGKILL
 
 
 async def stream_to_lot(stream: asyncio.StreamReader, lot: Lot) -> None:
@@ -125,10 +160,16 @@ def dep(
                     if process := await spawn(*p_args, **p_kwargs):
                         assert process.stdout is not None
                         assert process.stderr is not None
-                        await asyncio.gather(
-                            stream_to_lot(process.stdout, lot),
-                            stream_to_anchor(process.stderr, lot, window, program),
-                        )
+                        try:
+                            await asyncio.gather(
+                                stream_to_lot(process.stdout, lot),
+                                stream_to_anchor(process.stderr, lot, window, program),
+                            )
+                        finally:
+                            # ctrl+c cancels us mid-gather: the child keeps running
+                            # with its pipes open. tear the whole group down before
+                            # unwinding so nothing is orphaned past loop shutdown.
+                            await terminate(process)
                         if process.returncode and process.returncode != 0:
                             window.anchor_printf(
                                 f"{program}: exited with code {process.returncode}"
@@ -271,14 +312,36 @@ async def renovo(anchor: bool | None) -> None:
                 for fn in DEP_FNS:
                     upgrades.create_task(fn(window))
 
-        if not needs_sudo:
-            await run_all()
-            return
+        # run the upgrades in a task we can cancel cooperatively from a signal
+        # handler. relying on the default KeyboardInterrupt-on-SIGINT tears the
+        # loop down WITHOUT running the dep tasks' `finally: terminate()` — the
+        # children get orphaned. an installed handler cancels through the loop,
+        # so every finally runs and every process group is killed.
+        loop = asyncio.get_running_loop()
 
-        # password verified and cached; rebuild helper for the upgrade tasks
-        with askpass_helper(get_pass()) as helper:
-            os.environ["SUDO_ASKPASS"] = helper
-            await run_all()
+        async def guarded() -> None:
+            if not needs_sudo:
+                await run_all()
+                return
+            # password verified and cached; rebuild helper for the upgrade tasks
+            with askpass_helper(get_pass()) as helper:
+                os.environ["SUDO_ASKPASS"] = helper
+                await run_all()
+
+        task = asyncio.ensure_future(guarded())
+        for signame in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signame, task.cancel)
+        try:
+            await task
+        except asyncio.CancelledError:
+            # interrupted: the dep tasks' finally already killed their process
+            # groups on the way out. freeze the still-open provider lots and add
+            # an umbrella `(upgrader) stopped`; swallow so we exit without a trace.
+            window.lot("upgrader").stop()
+            window.close(interrupted=True)
+        finally:
+            for signame in (signal.SIGINT, signal.SIGTERM):
+                loop.remove_signal_handler(signame)
 
 
 if __name__ == "__main__":

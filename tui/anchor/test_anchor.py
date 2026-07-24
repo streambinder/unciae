@@ -121,6 +121,60 @@ def test_anchor_printf_accepts_any_color(color: str) -> None:
     window.anchor_printf("hello %s", "world")
 
 
+def test_stop_freezes_lot() -> None:
+    """stop() marks a lot as interrupted and freezes it as `(alias) stopped`."""
+    window = Window(stream=io.StringIO())
+    lot = window.lot("brew")
+    lot.print("upgrading...")
+    lot.stop()
+    assert lot._stopped
+    assert lot._closed
+    assert "stopped" in lot._render()
+    assert "brew" in lot._render()
+
+
+def test_close_interrupted_sweeps_open_lots() -> None:
+    """close(interrupted=True) freezes every still-open lot as stopped, leaves
+    already-closed lots untouched."""
+    buf = io.StringIO()
+    window = Window(stream=buf)
+    open_lot = window.lot("running")
+    open_lot.print("upgrading...")
+    done_lot = window.lot("finished")
+    done_lot.close("upgrade complete.")
+
+    window.close(interrupted=True)
+
+    assert open_lot._stopped
+    assert "stopped" in open_lot._render()
+    # a completed lot must not be relabelled stopped
+    assert not done_lot._stopped
+    assert "upgrade complete." in done_lot._render()
+
+
+def test_exit_with_exception_sweeps_open_lots() -> None:
+    """__exit__ receiving an exception (ctrl+c path) freezes open lots."""
+    buf = io.StringIO()
+    lot = None
+    try:
+        with Window(stream=buf) as window:
+            lot = window.lot("worker")
+            lot.print("upgrading...")
+            raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        pass
+    assert lot is not None and lot._stopped
+
+
+def test_exit_clean_does_not_stop_lots() -> None:
+    """Normal (no-exception) __exit__ must not mark open lots as stopped."""
+    buf = io.StringIO()
+    with Window(stream=buf) as window:
+        lot = window.lot("worker")
+        lot.print("upgrading...")
+    assert not lot._stopped
+
+
 def test_no_extra_blank_lines_between_lot_prints() -> None:
     """Regression: lot.print called repeatedly must not accumulate blank rows.
     With the cursor-up model, each redraw = N-1 \\n separators (rows joined

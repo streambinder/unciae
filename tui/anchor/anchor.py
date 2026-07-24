@@ -67,8 +67,10 @@ Yellow = Fore.YELLOW
 _BOLD = Style.BRIGHT
 _RESET = Style.RESET_ALL
 _IDLE_COLOR = Fore.WHITE
+_STOPPED_COLOR = Fore.YELLOW
 _IDLE = "idle"
 _DEFAULT_DONE = "done"
+_STOPPED = "stopped"
 
 _ESC = "\x1b["
 # per-line clear: move up 1, erase the line, carriage return
@@ -182,11 +184,20 @@ class Window:
             self._redraw_block()
             return value
 
-    def close(self) -> None:
+    def close(self, interrupted: bool = False) -> None:
         """Drop cursor below the block so the next external write (shell prompt
         on program exit, follow-up print, etc.) starts on a fresh line. Safe to
-        call multiple times."""
+        call multiple times.
+
+        When `interrupted` (teardown via ctrl+c / an exception propagating
+        through the `with` block), freeze any still-open lot as `(alias)
+        stopped` first — otherwise the block is abandoned mid-flight showing
+        stale "upgrading..." rows."""
         with self._lock:
+            if interrupted:
+                for lot in self._lots:
+                    if not lot._closed:
+                        lot.stop()
             if self._plain or not self._block_rows:
                 return
             self._stream.write("\r\n")
@@ -197,7 +208,9 @@ class Window:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        self.close()
+        # exc[0] is the exception type when the block unwinds abnormally
+        # (KeyboardInterrupt, CancelledError, ...) — that's our stop trigger.
+        self.close(interrupted=exc[0] is not None)
 
     # internals
 
@@ -260,6 +273,7 @@ class Lot:
         self._bold = bold
         self._data = ""
         self._closed = False
+        self._stopped = False
 
     def print(self, message: str) -> None:
         with self._window._lock:
@@ -281,7 +295,16 @@ class Lot:
             self._closed = True
         self.print(message if message is not None else _DEFAULT_DONE)
 
+    def stop(self) -> None:
+        """Freeze an interrupted lot as `(alias) stopped` (yellow). Distinct
+        from close(): marks an aborted job, not a completed one."""
+        self._stopped = True
+        self._closed = True
+        self.print(_STOPPED)
+
     def _render(self) -> str:
+        if self._stopped:
+            return _style(_STOPPED_COLOR, False, _format_alias(self._alias) + self._data)
         if self._closed:
             return _style(_IDLE_COLOR, False, _format_alias(self._alias) + self._data)
         header = _style(Normal, self._bold, _format_alias(self._alias))

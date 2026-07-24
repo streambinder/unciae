@@ -204,8 +204,7 @@ async def npm() -> CommandGenerator:
 
 @dep(cmd="pi")
 async def pi() -> CommandGenerator:
-    yield ["pi", "update"], {}
-    yield ["pi", "update", "--extensions"], {}
+    yield ["pi", "update", "--all"], {}
 
 
 async def is_sudo_required() -> bool:

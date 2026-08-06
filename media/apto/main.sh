@@ -6,6 +6,41 @@ function help() {
 	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run] [--tz] [--skip-compliant] [--skip-failures]"
 }
 
+# strip a trailing subsec and/or +/-HH:MM offset off an exif datetime string
+function strip_offset() {
+	sed -E 's/(\.[0-9]+)?[+-][0-9]{2}:[0-9]{2}$//' <<<"$1"
+}
+
+# extract the trailing +/-HH:MM offset off an exif datetime string, empty if naive
+function extract_offset() {
+	grep -oE '[+-][0-9]{2}:[0-9]{2}$' <<<"$1" || true
+}
+
+# convert a +/-HH:MM (or +/-H) offset into signed minutes
+function tz_to_minutes() {
+	local off="$1" sign hour min
+	sign="${off:0:1}"
+	hour="$(awk -F: '{printf "%d",$1}' <<<"${off:1}")"
+	min="$(awk -F: '{printf "%d",($2=="")?0:$2}' <<<"${off:1}")"
+	local total=$((hour * 60 + min))
+	[ "${sign}" = "-" ] && total=$((-total))
+	echo "${total}"
+}
+
+# shift a "YYYY:MM:DD HH:MM:SS" wall-clock by a signed second delta, portably, in the
+# given strftime format. the epoch round-trip runs pinned to utc: through a dst-observing
+# local zone the parse and the format would use different offsets and quietly eat an hour
+function shift_timestamp() {
+	local ts="$1" delta_sec="$2" fmt="${3:-%Y:%m:%d %H:%M:%S}" epoch
+	if date -j >/dev/null 2>&1; then # bsd/macos
+		epoch="$(TZ=UTC date -j -f "%Y:%m:%d %H:%M:%S" "${ts}" +%s)"
+		TZ=UTC date -j -r "$((epoch + delta_sec))" +"${fmt}"
+	else # gnu/linux; date -d wants YYYY-MM-DD, so swap only the two date-part colons
+		epoch="$(TZ=UTC date -d "$(sed 's/:/-/;s/:/-/' <<<"${ts}")" +%s)"
+		TZ=UTC date -d "@$((epoch + delta_sec))" +"${fmt}"
+	fi
+}
+
 function install_media_file() {
 	# check args
 	src="${1//\.\//}"
@@ -15,18 +50,16 @@ function install_media_file() {
 	# don't move if we already have a file in the right position
 	[ "${src}" == "${dst}" ] && return 0
 
-	# calculate shifts
+	# calculate shifts. bumping the stem through the epoch carries minutes into hours
+	# and hours into days, which hand-rolled digit arithmetic got wrong past 59s
 	dst_dir="$(dirname "${dst}")"
 	dst_base="$(basename "${dst}")"
 	while [ -e "${dst_dir}/${dst_base}" ]; do
 		echo "Shifting ${dst_base}"
-		secs="$((10#${dst_base:13:2} + 1))"
-		mins="${dst_base:11:2}"
-		if [ "$secs" -ge 60 ]; then
-			mins="$((10#${mins} + 1))"
-			secs=0
-		fi
-		dst_base="${dst_base:0:11}$(printf %02d "$((10#${mins}))")$(printf %02d "$((10#${secs}))").${dst_base##*.}"
+		stem="${dst_base%.*}"
+		dst_base="$(shift_timestamp \
+			"${stem:0:4}:${stem:4:2}:${stem:6:2} ${stem:9:2}:${stem:11:2}:${stem:13:2}" \
+			1 "%Y%m%d-%H%M%S").${dst_base##*.}"
 		# don't if we already have a file in the right position
 		[ "${src}" == "${dst_dir}/${dst_base}" ] && return 0
 	done
@@ -64,7 +97,7 @@ EXTS=(
 )
 UNKNOWN_DATE="$(date +'%Y:%m:%d %H:%M:%S')"
 TIME=""
-TZ="+2"
+TARGET_TZ="+2"
 
 _modes=0
 while [[ $# -gt 0 ]]; do
@@ -105,7 +138,7 @@ while [[ $# -gt 0 ]]; do
 		shift || echo -n
 		;;
 	--tz)
-		TZ="$2"
+		TARGET_TZ="$2"
 		shift || echo -n
 		;;
 	*)
@@ -138,18 +171,24 @@ if [ "${MODE}" = "static" ]; then
 	echo "Statically using time: ${TIME}"
 fi
 
-tz_sign="${TZ:0:1}"
-if [ "${tz_sign}" == "0" ]; then
-	tz_sign="+"
-	TZ="${tz_sign}${TZ}"
-fi
-if [ "${tz_sign}" != "-" ] && [ "${tz_sign}" != "+" ] && [ "${tz_sign}" != "0" ]; then
-	echo "Timezone sign must be explicit (${TZ}): exiting"
-	exit 1
-fi
-tz_hour="$(awk -F: '{printf "%02d",$1}' <<<"${TZ:1}")"
-tz_min="$(awk -F: '{printf "%d00",$2}' <<<"${TZ:1}" | cut -c1-2)"
-TZ=${tz_sign}${tz_hour}:${tz_min}
+# normalize a raw +/-H[:MM] offset into canonical +/-HH:MM form
+function normalize_tz() {
+	local raw="$1" sign hour min
+	sign="${raw:0:1}"
+	if [ "${sign}" == "0" ]; then
+		sign="+"
+		raw="${sign}${raw}"
+	fi
+	if [ "${sign}" != "-" ] && [ "${sign}" != "+" ]; then
+		echo "Timezone sign must be explicit (${raw}): exiting" >&2
+		return 1
+	fi
+	hour="$(awk -F: '{printf "%02d",$1}' <<<"${raw:1}")"
+	min="$(awk -F: '{printf "%d00",$2}' <<<"${raw:1}" | cut -c1-2)"
+	echo "${sign}${hour}:${min}"
+}
+
+TARGET_TZ="$(normalize_tz "${TARGET_TZ}")" || exit 1
 
 RE_EXCLUDE='!'
 if [ "${SKIP_COMPLIANT}" = 1 ]; then
@@ -167,31 +206,49 @@ while read -r fname <&3; do
 
 	final_timestamp="${TIME}"
 	if [ "${MODE}" != "static" ]; then
-		# parse timestamps
-		exif_timestamps="$(exiftool -time:all "${fname}")"
-		exif_create_date="$(awk -F': ' '/^Create Date  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | awk -F'+' 'NR==1 {print $1}' || echo "${UNKNOWN_DATE}")"
+		# parse timestamps. QuickTimeUTC makes exiftool expose mp4/mov dates (stored as utc
+		# by spec) with an explicit offset instead of a naive value we'd misread as local
+		exif_timestamps="$(exiftool -api QuickTimeUTC=1 -time:all "${fname}")"
+		# the grep exits nonzero when a file carries no create date at all, which under
+		# pipefail would take the whole run down with it
+		exif_create_date_raw="$(awk -F': ' '/^Create Date  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | head -1 || true)"
+		exif_create_date="$(strip_offset "${exif_create_date_raw}")"
+		[ -z "${exif_create_date}" ] && exif_create_date="${UNKNOWN_DATE}"
 		[ "${#exif_create_date}" = 16 ] && exif_create_date="${exif_create_date}:00"
-		fs_modification_time="$(awk -F': ' '/^File Modification Date\/Time  /{print $2}' <<<"${exif_timestamps}" | awk -F'+' 'NR==1 {print $1}')"
+		fs_modification_time_raw="$(awk -F': ' '/^File Modification Date\/Time  /{print $2}' <<<"${exif_timestamps}" | head -1)"
+		fs_modification_time="$(strip_offset "${fs_modification_time_raw}")"
+		# the zone the exif clock was in: dedicated tag first, else whatever QuickTimeUTC
+		# left on the date itself. empty means the capture time is naive and unanchored
+		exif_offset="$(awk -F': ' '/^Offset Time Original  /{print $2; exit}/^Offset Time  /{print $2}' <<<"${exif_timestamps}" | head -1)"
+		[ -z "${exif_offset}" ] && exif_offset="$(extract_offset "${exif_create_date_raw}")"
 		name_date="${basename%.*}"
 		name_date="${name_date//[!0-9]/}"
 		name_date="${name_date:0:4}:${name_date:4:2}:${name_date:6:2} ${name_date:8:2}:${name_date:10:2}:${name_date:12:2}"
 		[[ "${name_date}" =~ ^[0-9]{4}:[0-9]{2}:[0-9]{2}\ [0-2]{1}[0-9]{1}:[0-5]{1}[0-9]{1}:[0-5]{1}[0-9]{1}$ ]] || name_date="${UNKNOWN_DATE}"
 
 		if [ "${MODE}" = "smart" ]; then
-			# in smart mode, let's sort it by picking the older timestamp
-			oldest="${name_date//[!0-9]/}"
-			strategy="name"
-			if [ "${fs_modification_time//[!0-9]/}" -lt "${oldest}" ]; then
-				oldest="${fs_modification_time//[!0-9]/}"
-				strategy="fs"
-			fi
-			if [ "${exif_create_date//[!0-9]/}" -lt "${oldest}" ]; then
-				oldest="${exif_create_date//[!0-9]/}"
+			# an exif capture time that declares its own zone is the only candidate we can
+			# place on an absolute scale, so it wins outright. the others are naive digits
+			# in unknown frames: fs mtimes come back mangled off fat cards and some phones
+			# encode utc in the filename, which makes comparing them by value meaningless
+			if [ -n "${exif_offset}" ] && [ "${exif_create_date}" != "${UNKNOWN_DATE}" ]; then
 				strategy="exif"
-			fi
-			if [ "${oldest}" = "${UNKNOWN_DATE//[!0-9]/}" ]; then
-				echo "Can't infer best timestamp to use for ${basename}: exiting"
-				[ "${SKIP_FAILURES}" = 1 ] && continue || exit 1
+			else
+				# otherwise fall back to picking the older timestamp
+				oldest="${name_date//[!0-9]/}"
+				strategy="name"
+				if [ "${fs_modification_time//[!0-9]/}" -lt "${oldest}" ]; then
+					oldest="${fs_modification_time//[!0-9]/}"
+					strategy="fs"
+				fi
+				if [ "${exif_create_date//[!0-9]/}" -lt "${oldest}" ]; then
+					oldest="${exif_create_date//[!0-9]/}"
+					strategy="exif"
+				fi
+				if [ "${oldest}" = "${UNKNOWN_DATE//[!0-9]/}" ]; then
+					echo "Can't infer best timestamp to use for ${basename}: exiting"
+					[ "${SKIP_FAILURES}" = 1 ] && continue || exit 1
+				fi
 			fi
 		elif [ "${MODE}" = "interactive" ]; then
 			# in interactive mode, let's ask the user
@@ -238,11 +295,38 @@ while read -r fname <&3; do
 		[ "${SKIP_FAILURES}" = 1 ] && continue || exit 1
 	fi
 
-	echo "Chosen date for ${fname}: ${final_timestamp}${TZ}"
+	# recompute the wall-clock to the target zone, but only when the source zone is
+	# known, taken from whichever source won above: mixing frames (e.g. the exif offset
+	# onto an fs timestamp) lands hours off, and a naive date that declares no zone at
+	# all is ambiguous, so it gets relabelled rather than guessed at
+	src_tz=""
+	if [ "${MODE}" != "static" ]; then
+		case "${strategy}" in
+		exif)
+			meta_offset="${exif_offset}"
+			;;
+		fs)
+			meta_offset="$(extract_offset "${fs_modification_time_raw}")"
+			;;
+		*) # name and input are naive digits, there is nothing to infer a zone from
+			meta_offset=""
+			;;
+		esac
+		[ -n "${meta_offset}" ] && src_tz="$(normalize_tz "${meta_offset}")"
+	fi
+	if [ -n "${src_tz}" ]; then
+		delta_min=$(($(tz_to_minutes "${TARGET_TZ}") - $(tz_to_minutes "${src_tz}")))
+		if [ "${delta_min}" != 0 ]; then
+			echo "Converting ${final_timestamp} by $((delta_min / 60))h$((delta_min % 60))m (${src_tz} -> ${TARGET_TZ})"
+			final_timestamp="$(shift_timestamp "${final_timestamp}" "$((delta_min * 60))")"
+		fi
+	fi
+
+	echo "Chosen date for ${fname}: ${final_timestamp}${TARGET_TZ}"
 	[ "${DRY_RUN}" = 1 ] && continue
 
 	# compute timestamp formats
-	final_exif_timestamp="${final_timestamp}${TZ}"
+	final_exif_timestamp="${final_timestamp}${TARGET_TZ}"
 	final_fs_timestamp="${final_timestamp//[!0-9]/}"
 	final_fs_timestamp="${final_fs_timestamp:0:12}.${final_fs_timestamp:12:2}"
 	final_ext="$(echo "${fname##*.}" | tr '[:upper:]' '[:lower:]' | sed 's/jpeg/jpg/')"
@@ -251,9 +335,9 @@ while read -r fname <&3; do
 
 	# perform the changes
 	[[ "${final_ext}" != "jpg" ]] || exiftool -overwrite_original -m -trailer= "${fname}"
-	exiftool -overwrite_original -m -wm w \
+	exiftool -api QuickTimeUTC=1 -overwrite_original -m -wm w \
 		-time:all="${final_exif_timestamp}" "${fname}" &&
-		exiftool -overwrite_original -m \
+		exiftool -api QuickTimeUTC=1 -overwrite_original -m \
 			-CreateDate="${final_exif_timestamp}" \
 			-DateTimeOriginal="${final_exif_timestamp}" \
 			-MediaCreateDate="${final_exif_timestamp}" \

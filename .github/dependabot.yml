@@ -7,12 +7,14 @@ updates:
       - "/audio/pluffer"
     schedule:
       interval: "weekly"
-    allow:
-      - dependency-type: "direct"
-      - dependency-type: "indirect"
     open-pull-requests-limit: 25
     cooldown:
       default-days: 7
+    groups:
+      gomod:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "uv"
     directories:
@@ -29,6 +31,11 @@ updates:
     open-pull-requests-limit: 25
     cooldown:
       default-days: 7
+    groups:
+      uv:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -36,3 +43,8 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"

@@ -72,6 +72,8 @@ jobs:
           while IFS= read -r -d '' proj; do
             dir="$(dirname "$proj")"
             echo "::group::$dir"
+            # --frozen installs the lock without checking it matches pyproject
+            uv lock --check --project "$dir"
             uv sync --frozen --project "$dir"
             (cd "$dir" && uv run mypy --strict)
             echo "::endgroup::"

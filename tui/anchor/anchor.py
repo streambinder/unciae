@@ -291,8 +291,9 @@ class Lot:
         self.print(_IDLE)
 
     def close(self, message: str | None = None) -> None:
-        if not self._window._plain:
-            self._closed = True
+        # _closed tracks "this job finished", not just render style — the
+        # interrupted sweep reads it, so plain mode has to record it too
+        self._closed = True
         self.print(message if message is not None else _DEFAULT_DONE)
 
     def stop(self) -> None:

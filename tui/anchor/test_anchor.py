@@ -152,6 +152,24 @@ def test_close_interrupted_sweeps_open_lots() -> None:
     assert "upgrade complete." in done_lot._render()
 
 
+def test_close_interrupted_skips_closed_lots_in_plain_mode() -> None:
+    """Regression: plain mode must still record that a lot finished, otherwise
+    the interrupted sweep relabels completed jobs as stopped."""
+    buf = io.StringIO()
+    window = Window(stream=buf)
+    window.enable_plain_mode()
+    done_lot = window.lot("finished")
+    done_lot.close("upgrade complete.")
+    open_lot = window.lot("running")
+    open_lot.print("upgrading...")
+
+    window.close(interrupted=True)
+
+    assert open_lot._stopped
+    assert not done_lot._stopped
+    assert "finished stopped" not in buf.getvalue()
+
+
 def test_exit_with_exception_sweeps_open_lots() -> None:
     """__exit__ receiving an exception (ctrl+c path) freezes open lots."""
     buf = io.StringIO()

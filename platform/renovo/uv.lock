@@ -9,7 +9,7 @@ resolution-markers = [
 [[package]]
 name = "anchor"
 version = "0.1.0"
-source = { git = "https://github.com/streambinder/unciae.git?subdirectory=tui%2Fanchor&branch=master#eacc1c92355dba1c5d13c01493c48ce8b2df2083" }
+source = { git = "https://github.com/streambinder/unciae.git?subdirectory=tui%2Fanchor&branch=master#8ceeee258e3716e8f978d216c250380fcb8535ae" }
 dependencies = [
     { name = "colorama" },
 ]

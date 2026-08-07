@@ -221,11 +221,6 @@ async def omz() -> CommandGenerator:
     yield [f"{os.getenv('ZSH')}/tools/upgrade.sh"], {}
 
 
-@dep(platform_name="darwin", cmd="softwareupdate")
-async def macos() -> CommandGenerator:
-    yield ["sudo", "softwareupdate", "-iaR"], {}
-
-
 @dep()
 async def yadm() -> CommandGenerator:
     yield ["yadm", "pull", "--rebase"], {}

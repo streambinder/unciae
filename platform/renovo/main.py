@@ -331,9 +331,8 @@ async def renovo(anchor: bool | None) -> None:
             await task
         except asyncio.CancelledError:
             # interrupted: the dep tasks' finally already killed their process
-            # groups on the way out. freeze the still-open provider lots and add
-            # an umbrella `(upgrader) stopped`; swallow so we exit without a trace.
-            window.lot("upgrader").stop()
+            # groups on the way out. close(interrupted) freezes whatever lots are
+            # still open as stopped; swallow so we exit without a trace.
             window.close(interrupted=True)
         finally:
             for signame in (signal.SIGINT, signal.SIGTERM):

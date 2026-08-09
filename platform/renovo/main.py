@@ -179,9 +179,9 @@ def dep(
             except Exception as exc:
                 # logic/runtime errors share the sticky error tier with stderr
                 window.anchor_printf(f"{program}: {exc}")
-                lot.close("failed")
+                lot.close("raised")
                 return
-            lot.close("upgrade complete.")
+            lot.close("upgraded")
 
         wrapped = cast(DepFn, wrapper_dep)
         DEP_FNS.add(wrapped)

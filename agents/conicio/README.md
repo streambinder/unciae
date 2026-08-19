@@ -47,6 +47,34 @@ provided, follow single-file workflow.
 
 - **For video (MP4)**: use `ffprobe` to extract creation_time, format_tags.
 
+### 1b. Geolocation enrichment (pono) for missing GPS
+
+If extracted metadata lacks GPS coordinates (no EXIF GPS, no location
+tags) and the user has provided or you can infer a plausible
+address/place from context, use **pono** to anchor the asset:
+
+```bash
+pono/main.sh -a "<address>" <path-to-file>
+```
+
+- Prefer a user-supplied address over inference.
+- When a single file has no GPS, ask if the user knows where it was
+  taken; if they provide an address, run `pono` with that address
+  (dry-run first with `-d` to confirm single result, then real run).
+- For pools missing GPS across many assets: if the user says all
+  assets share the same location (e.g. wedding venue), use pono once
+  with that venue address over the pool folder to backfill GPS before
+  estimating times.
+- If nominatim returns >1 result, ask the user to disambiguate with a
+  more specific address; do NOT guess.
+- After pono succeeds, re-extract GPS via `exiftool -GPS*` to verify
+  coordinates were written and preserve original timestamps via `touch`
+  logic inside pono.
+
+This ensures downstream time estimation can leverage solar-position /
+timezone hints from GPS and that assets gain consistent geolocation
+even when original EXIF lacked it.
+
 ### 2. Analyze visual evidence (use your vision capabilities)
 
 - **Shadow analysis**: direction, length, softness/hardness.

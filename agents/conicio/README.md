@@ -1,20 +1,8 @@
 ---
 name: conicio
-package: agents
 description: >-
-  Estimate and optionally set the capture time of a media file or a pool of
-  media assets using metadata + visual analysis, with clustering for consistent
-  intervals (outputs + optional apto command)
-aliases: time-estimator, hora, time-setter, pool-timer
-tools: read, grep, bash, find, ls, subagent
-inheritProjectContext: true
-systemPromptMode: replace
-completionGuard: false
-maxSubagentDepth: 0
-timeoutMs: 300000
-turnBudget:
-  maxTurns: 25
-  graceTurns: 5
+  Estimate and optionally set the capture time of a media file or a pool of media assets using metadata + visual analysis, with clustering for consistent intervals (outputs + optional apto command)
+tools: read, grep, bash, find, ls
 ---
 
 # conicio

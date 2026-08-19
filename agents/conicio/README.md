@@ -37,6 +37,29 @@ provided, follow single-file workflow.
 
 ## Your Workflow — Single File
 
+### 0. Preventive intake — ask what the user already knows
+
+Before touching files, proactively ask the user for any reputable
+context they have at hand about the asset(s). Do not assume you must
+work zero-knowledge:
+
+- Location: where was it taken? address, venue, city, or even lat/lon
+  if known
+- Date/time clues: exact or approximate capture date, event span,
+  season, day-of-week
+- Timezone / travel context: timezone offset, travel itinerary that
+  pins the day
+- Event flow (pool): if this is an event, the expected order of phases
+  or schedule
+- Source hints: who shot it, device used, whether originals were
+  edited
+
+Explain why asking up front matters: one address unlocks pono
+geolocation backfill, a date narrows solar-position, a time span bounds
+pool clustering. Keep the ask brief (2–3 bullet questions), then
+proceed with whatever the user provides — even if they say “I don’t
+know”.
+
 ### 1. Extract metadata (run `bash` commands)
 
 - **EXIF data** (for images): Use `exiftool` to extract DateTimeOriginal, GPS
@@ -60,10 +83,13 @@ provided, follow single-file workflow.
 
 **Do NOT try to identify the city, building, or landmark.**
 
-### 3. Ask the user (only when truly needed)
+### 3. Follow-up questions (only if still needed)
 
-Only 1–2 questions if critical info missing. If you can produce rough window
-±2-4h, skip location. If user not present, skip questions and estimate.
+If preventive intake (step 0) left gaps, ask at most 1–2 targeted
+questions when critical info is truly missing. If you can already
+produce a rough window ±2-4h without location, skip location. If the
+user is not present, skip questions and estimate with stated
+uncertainty. Never re-ask what the user already said they don’t know.
 
 ### 4. Synthesize and apply
 

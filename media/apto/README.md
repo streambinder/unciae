@@ -16,6 +16,9 @@ With `-e` (or `--exif`) flag, by default exif metadata will be used as source of
 apto/main.sh --exif --tz +02:00 path/to/files
 ```
 
+`Create Date` is preferred, falling back to `Date/Time Original` when it is absent —
+messenger exports and some re-encodes strip the former but keep the latter.
+
 Conversely, with `-f` (or `--fs`) flag, FS timestamps will be used:
 
 ```bash

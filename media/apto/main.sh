@@ -217,6 +217,11 @@ while read -r fname <&3; do
 		# the grep exits nonzero when a file carries no create date at all, which under
 		# pipefail would take the whole run down with it
 		exif_create_date_raw="$(awk -F': ' '/^Create Date  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | head -1 || true)"
+		# messenger exports and some re-encodes strip Create Date but keep the capture
+		# time in Date/Time Original, so fall back to it rather than calling the file
+		# undatable and pushing the caller towards patching tags by hand
+		[ -n "${exif_create_date_raw}" ] ||
+			exif_create_date_raw="$(awk -F': ' '/^Date\/Time Original  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | head -1 || true)"
 		exif_create_date="$(strip_offset "${exif_create_date_raw}")"
 		[ -z "${exif_create_date}" ] && exif_create_date="${UNKNOWN_DATE}"
 		[ "${#exif_create_date}" = 16 ] && exif_create_date="${exif_create_date}:00"

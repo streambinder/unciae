@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.25.8
 
 require (
-	github.com/streambinder/spotitube v1.1.7
+	github.com/streambinder/spotitube v1.1.8
 	github.com/zmb3/spotify/v2 v2.4.3
 )
 
@@ -17,5 +17,5 @@ require (
 	github.com/gosimple/unidecode v1.0.1 // indirect
 	github.com/thanhpk/randstr v1.0.6 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 )

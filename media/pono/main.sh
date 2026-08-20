@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") [-d/--dry-run] [--hook command] -a <address> [<path>...]"
+	echo -e "Usage:\n\t$(basename "$0") [-d/--dry-run] [--hook command] -a <address|@lat,lon> [<path>...]\n\n  Address can be a place name to geocode (e.g. \"Via Petroselli 50, Roma\") or direct coordinates\n  as @<lat>,<lon> (e.g. @41.9028,12.4964) to skip geocoding and use the given position directly."
 }
 
 # shell setup

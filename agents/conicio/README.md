@@ -81,8 +81,15 @@ echo "✅ Tool discovery complete"
 
 Store the help output in variables or temp files so you know:
 
-- **apto**: which flags are available (`-e`/`-f`/`-n`/`-s`/`-t`, `--tz`, `--dry-run`)
-- **pono**: how to pass addresses (`-a`), dry-run flag (`-d`), and any hooks
+- **apto** takes a **directory** and walks it itself — never hand-build a file
+  list for it. Pick the mode by where the timestamp comes from: `-e` reads the
+  file's own `CreateDate`, `-t`/`--time` writes a value you supply, `-f` uses
+  the filesystem mtime, `-n` the filename. `--tz` is mandatory and its sign
+  must be explicit (`+02:00`). `--skip-compliant` passes over files already
+  named `YYYYMMDD-HHMMSS.ext`, so re-running is cheap and safe;
+  `--skip-failures` continues past files whose timestamp cannot be computed.
+- **pono** also accepts directories. Addresses go through `-a`, either a place
+  name or `@lat,lon` to skip geocoding; `-d` dry-runs.
 
 Proceed to STEP 1 only after all tools are confirmed present.
 
@@ -404,8 +411,14 @@ Never emit a run of round or evenly spaced values.
   out of its cluster, or past a neighbouring cluster's boundary, is a bug.
 - **Ordering**: after jittering, re-check that the sequence from STEP 1 still
   holds. Randomness must never reorder phases.
-- **Real metadata wins**: files with trustworthy `DateTimeOriginal` keep their
-  exact timestamp. Jitter applies only to _estimated_ times.
+- **Real metadata wins**: files with a trustworthy capture time keep it exactly.
+  Jitter applies only to _estimated_ times. This decides a timestamp's _value_,
+  never whether a file gets processed — every file still goes through `apto` in
+  STEP 7 and gets renamed like the rest.
+
+Only files that reach this step needing an _estimate_ belong in
+`/tmp/pool_times.tsv`. That file is an input to one pass of STEP 7, not the
+list of files to be processed.
 
 ---
 
@@ -467,7 +480,7 @@ Based on this analysis, the estimated timeline covers <hh:mm>–<hh:mm> for
 
 If you confirm, I will:
   1. Run pono to apply GPS coordinates to all files
-  2. Run apto to write DateTimeOriginal timestamps (renaming to YYYYMMDD-HHMMSS.ext)
+  2. Run apto over every file, renaming all of them to YYYYMMDD-HHMMSS.ext
 ```
 
 ---
@@ -499,37 +512,82 @@ pono -a "<address>" $(cat /tmp/location_a_no_gps.txt)
 
 ### Timestamp assignment (apto) — run second
 
-**IMPORTANT:** `apto` does **two things** per file — it writes `DateTimeOriginal`
-and renames the file to `YYYYMMDD-HHMMSS.ext`. The skill **must not** manually
-rename files; it relies entirely on `apto` for both timestamp metadata and
-renaming. Process ALL files.
+`apto` writes the capture time **and** renames to `YYYYMMDD-HHMMSS.ext`.
 
-Feed `apto` the jittered value from STEP 5, seconds included — a pool of
-`hh:mm:00` timestamps is the giveaway that they were generated.
+**The invariant: when STEP 7 finishes, every media file in `$POOL` is named
+`YYYYMMDD-HHMMSS.ext`.** A file that isn't is a failure to report by name, not
+a file to quietly leave behind. Having a good capture time already is not a
+reason to skip a file — it decides which _mode_ `apto` runs in, nothing more.
+
+Two hard prohibitions:
+
+- **Never rename by hand.** `apto` owns naming.
+- **Never write a timestamp with `exiftool`.** `apto -e` reads `CreateDate`, so
+  a file stamped only with `DateTimeOriginal` becomes permanently unprocessable
+  by it. Use `apto --time` instead — it writes both tags and renames.
+
+#### Pass 1 — files whose time you estimated
+
+Only the files with no usable capture time of their own. Feed each the jittered
+value from STEP 5, seconds included — a pool of `hh:mm:00` timestamps is the
+giveaway that they were generated.
 
 ```bash
 # each line: <path>\t<YYYY:MM:DD hh:mm:ss>, seconds never 00
 while IFS=$'\t' read -r file stamp; do
-  apto "$file" --time "$stamp" --tz "<HH:MM>" 2>&1
-done < /tmp/pool_times.tsv > /tmp/apto_output.txt
+  apto --time "$stamp" --tz "$TZ" "$file"
+done < /tmp/pool_times.tsv
 ```
+
+#### Pass 2 — every other file
+
+Do **not** build a file list. `apto` takes the directory and walks it itself,
+matches extensions case-insensitively, and `--skip-compliant` skips whatever
+Pass 1 already renamed.
+
+```bash
+apto -e --skip-compliant --skip-failures --tz "$TZ" "$POOL"
+```
+
+#### Pass 3 — converge, and report what is left
+
+`--skip-failures` covers "can't compute a timestamp", but a genuinely corrupt
+file still aborts the run, and a large pool can outlive the command timeout.
+Both are handled the same way: re-run until the remainder stops shrinking.
+Every pass is cheap because compliant files are skipped.
+
+```bash
+COMPLIANT='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].*'
+# these are apto's own extensions — a wider list never converges
+todo() { find "$POOL" -type f -not -name '.*' ! -name "$COMPLIANT" \( \
+  -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \
+  -o -iname '*.heic' -o -iname '*.dng' -o -iname '*.arw' -o -iname '*.nef' \
+  -o -iname '*.mp4' -o -iname '*.mov' -o -iname '*.m4v' -o -iname '*.avi' \
+  -o -iname '*.3gp' -o -iname '*.wmv' \); }
+
+prev=-1
+while true; do
+  n=$(todo | wc -l | tr -d ' ')
+  echo "remaining: $n"
+  [ "$n" -eq 0 ] && break
+  [ "$n" -eq "$prev" ] && break # a pass changed nothing, the rest are real failures
+  prev=$n
+  apto -e --skip-compliant --skip-failures --tz "$TZ" "$POOL" || true
+done
+
+echo "=== not processed, report these by name ==="
+todo
+```
+
+This loop **is** the verification — there is no separate count to eyeball. Do
+not describe the run as complete while `todo` still prints anything; list those
+files to the user with the reason `apto` gave.
 
 **⚠️ Key rule:** `apto` renames, `pono` does not. Running `pono` first sidesteps
 the problem; inverting the order forces `pono` to target the new
 `YYYYMMDD-HHMMSS.ext` names parsed out of `apto`'s output.
 
-### Verification (mandatory)
-
-#### After `apto`, verify 100% timestamp + rename coverage
-
-```bash
-original_count=$(find /path/to/pool -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.JPG' -o -name '*.webp' -o -name '*.mp4' -o -name '*.MOV' -o -name '*.dng' \) | wc -l)
-renamed_count=$(find /path/to/pool -maxdepth 1 -type f -name '[0-9]*-[0-9]*.*' | wc -l)
-echo "Original: $original_count | Renamed: $renamed_count"
-```
-
-If counts differ, any files not yet processed need to be handled (corrupted EXIF,
-missing files, etc.).
+### Verification
 
 #### After `pono`, verify 100% GPS coverage
 
@@ -539,9 +597,14 @@ The count should now match the number of processable files.
 
 ### Failure handling
 
-- **Corrupted EXIF** (e.g. `apto` reports "OtherImageStart data error"): skip
-  the file, note it in summary. After batch processing, report how many files
-  were processed vs skipped.
+- **`apto` says "Can't compute the right best timestamp"**: the file carries no
+  usable date. `--skip-failures` steps over it; the STEP 7 loop will surface it
+  at the end. Either give it an estimate through Pass 1 or report it.
+- **A corrupt file aborts the whole `apto` run**, `--skip-failures`
+  notwithstanding — the failure happens inside `exiftool`, below that guard.
+  This is why STEP 7 loops: the next pass resumes past everything already
+  renamed. If the remainder stops shrinking, the file at the head of it is the
+  one to name to the user.
 - **Multiple results from `pono -d`**: ask user to disambiguate with a more
   specific address. Do NOT guess.
 - **No GPS-bearing assets in pool**: fall back to address-based geolocation

@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run] [--tz] [--skip-compliant] [--skip-failures]"
+	echo -e "Usage:\n\t$(basename "$0") <path> [-e/--exif|-f/--fs|-n/--name|-s/--smart|-t/--time] [-d/--dry-run] --tz <offset> (mandatory) [--skip-compliant] [--skip-failures]"
 }
 
 # strip a trailing subsec and/or +/-HH:MM offset off an exif datetime string
@@ -97,7 +97,7 @@ EXTS=(
 )
 UNKNOWN_DATE="$(date +'%Y:%m:%d %H:%M:%S')"
 TIME=""
-TARGET_TZ="+2"
+TARGET_TZ=""
 
 _modes=0
 while [[ $# -gt 0 ]]; do
@@ -149,6 +149,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # arguments validation
+
+if [ -z "${TARGET_TZ}" ]; then
+	echo "--tz is mandatory: provide timezone like +02:00 or -05:00" >&2
+	exit 1
+fi
 
 if [ "${_modes}" -gt 1 ]; then
 	echo "--exif, --fs, --name, --smart and --time flags are mutually exclusive"

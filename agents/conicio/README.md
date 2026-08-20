@@ -26,15 +26,19 @@ stand for whatever vocabulary the user actually supplies.
 
 ## Complete Workflow — One Flow
 
+<!-- jscpd:ignore-start -->
+
 ```text
 ┌───────────────────────────────────────────────────────────────┐
-│ STEP 0  Probe available tools (exiftool, ffprobe, apto, pono) │
+│ STEP 0  Probe available tools (exiftool, ffprobe, magick, …)  │
 ├───────────────────────────────────────────────────────────────┤
 │ STEP 1  Intake: user context + anchor hypotheses              │
 ├───────────────────────────────────────────────────────────────┤
 │ STEP 2  Extract deterministic metadata (exiftool, ffprobe)    │
 ├───────────────────────────────────────────────────────────────┤
-│ STEP 3  Gather non-deterministic features (vision)            │
+│ STEP 2.5  Build 512px proxies + video frames in the work dir  │
+├───────────────────────────────────────────────────────────────┤
+│ STEP 3  Gather non-deterministic features (vision, on proxies)│
 ├───────────────────────────────────────────────────────────────┤
 │ STEP 4  Cluster (only when pool, ≥2 files)                    │
 ├───────────────────────────────────────────────────────────────┤
@@ -46,6 +50,8 @@ stand for whatever vocabulary the user actually supplies.
 └───────────────────────────────────────────────────────────────┘
 ```
 
+<!-- jscpd:ignore-end -->
+
 Steps 0 and 1–6 are **informational only** — they change nothing on disk.
 Step 7 is the **only destructive/action step**, and it requires explicit
 user confirmation.
@@ -55,12 +61,13 @@ user confirmation.
 ## STEP 0: Probe Available Tools
 
 Before doing any metadata extraction or file modification, verify that
-`exiftool`, `ffprobe`, `apto`, and `pono` are available and discover
-their usage patterns. **Block execution if any required tool is missing.**
+`exiftool`, `ffprobe`, `ffmpeg`, `magick`, `apto` and `pono` are available and
+discover their usage patterns. **Block execution if any required tool is
+missing.**
 
 ```bash
 # Check all required tools
-for cmd in exiftool ffprobe apto pono; do
+for cmd in exiftool ffprobe ffmpeg magick apto pono; do
   if ! command -v "$cmd" &> /dev/null; then
     echo "ERROR: '$cmd' is not available. Cannot proceed."
     exit 1
@@ -155,16 +162,19 @@ reputable coordinates. Use these as **geolocation anchors**:
 
 4. **Confirm anchor hypotheses with the user:**
 
-   ```text
-   Geolocation anchors found in pool:
-   - Anchor A (N=X): ~<lat-a>, <lon-a> — "<location-a>" area
-     Files: <file> (<hh:mm>), <file> (<hh:mm>)
-   - Anchor B (N=Y): ~<lat-b>, <lon-b> — "<location-b>" area
-     Files: <file> (<hh:mm>), <file> (<hh:mm>)
-   - No GPS: ~Z files (need pono geolocation)
+   <!-- jscpd:ignore-start -->
 
-   Are these locations correct?
+   ```text
+   Proposed anchors, from what you told me and what the files carry:
+     Date <YYYY-MM-DD>, starting ~<hh:mm>
+     Sequence <phase 1> → <phase 2> → <phase 3> → …
+     Anchor A (N=X) ~<lat-a>, <lon-a> "<location-a>", from <file>, <file>
+     Anchor B (N=Y) ~<lat-b>, <lon-b> "<location-b>", from <file>, <file>
+     No GPS on ~Z files, they need pono
+   Does that match? (Yes / Adjust: ___)
    ```
+
+   <!-- jscpd:ignore-end -->
 
 5. **If user confirms**, use the confirmed anchors to run `pono` with
    `@lat,lon` syntax (bypasses address resolution):
@@ -178,25 +188,10 @@ If no files have GPS, fall back to asking the user for addresses and using
 
 ### Anchor proposals
 
-Based on intake, propose anchor hypotheses (date, approximate time windows,
-geolocation) and get **user confirmation** before proceeding. Do NOT assume
-anything the user hasn't confirmed.
-
-Example:
-
-```text
-Proposed anchors based on what you told me:
-- Date: <YYYY-MM-DD> ✓
-- Location A: <location-a> ✓
-- Location B: <location-b> ✓
-- Estimated start: ~<hh:mm>
-- Expected sequence: <phase 1> → <phase 2> → <phase 3> → …
-
-Does this timeline match what you expect? (Yes / Adjust: ___)
-```
-
-Fold in the geolocation anchors already confirmed above rather than restating
-them.
+Date, time window, sequence and geolocation are proposed together, in the one
+confirmation shown above — do not run a second round-trip for the timeline.
+Nothing proceeds until the user confirms, and nothing they haven't confirmed
+may be assumed.
 
 ---
 
@@ -238,9 +233,92 @@ If the count is low, GPS will need `pono` (see STEP 7).
 
 ---
 
+## STEP 2.5: Build Analysis Proxies
+
+Never read originals for vision. A 12 MP photo costs ~4784 visual tokens; a
+512 px proxy costs ~266. Beyond ~20 images in a request the API also applies a
+stricter per-image dimension limit and _rejects_ oversized ones, so on any pool
+larger than 20 files proxies are a correctness requirement, not an optimization.
+
+### The work directory is fixed — do not invent a path
+
+```bash
+POOL="/path/to/pool"                                   # the pool being processed
+WORK="${TMPDIR:-/tmp}/conicio/$(basename "$POOL")"     # never inside $POOL
+PROXIES="$WORK/proxies"
+FRAMES="$WORK/frames"
+MANIFEST="$WORK/manifest.tsv"
+mkdir -p "$PROXIES" "$FRAMES"
+```
+
+**The work directory MUST live outside the pool.** Anything left inside gets
+renamed by `apto` and geotagged by `pono` in STEP 7, and corrupts the coverage
+counts. The whole tree is disposable — delete it when done.
+
+Proxy names keep the original extension before `.jpg`, so `IMG_1.jpg` and
+`IMG_1.mov` cannot collide:
+
+| Original          | Artifact                           |
+| ----------------- | ---------------------------------- |
+| `$POOL/IMG_1.jpg` | `$PROXIES/IMG_1.jpg.jpg`           |
+| `$POOL/IMG_2.dng` | `$PROXIES/IMG_2.dng.jpg`           |
+| `$POOL/IMG_3.mov` | `$FRAMES/IMG_3.mov.t<seconds>.jpg` |
+
+Append every artifact to `$MANIFEST` as `<artifact>\t<original>`. Resolve
+proxy → original through the manifest, never by reconstructing the name.
+
+### Stills
+
+```bash
+while IFS= read -r src; do
+  proxy="$PROXIES/$(basename "$src").jpg"
+  [ -s "$proxy" ] && continue                    # cached from an earlier run
+  # fast path: RAW/HEIC carry a full-size JPEG preview, no demosaic needed.
+  # exiftool exits 0 with empty output when absent, so test the size, not $?
+  cand="$WORK/.pv.jpg"
+  exiftool -b -PreviewImage "$src" > "$cand" 2>/dev/null
+  [ -s "$cand" ] || exiftool -b -JpgFromRaw "$src" > "$cand" 2>/dev/null
+  [ -s "$cand" ] || cand="$src"
+  magick "$cand" -auto-orient -resize 512x512\> -quality 80 "$proxy" || continue
+  printf '%s\t%s\n' "$proxy" "$src" >> "$MANIFEST"
+done < /tmp/pool_files.txt
+rm -f "$WORK/.pv.jpg"
+```
+
+`-auto-orient` is **mandatory**: Claude never receives EXIF, so an unrotated
+proxy is analysed sideways and silently wrecks shadow-direction reasoning.
+`512x512>` only ever shrinks — smaller originals pass through untouched.
+
+### Video frames
+
+```bash
+dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$src")
+for pct in 10 50 90; do
+  t=$(awk -v d="$dur" -v p="$pct" 'BEGIN{printf "%.0f", d*p/100}')
+  frame="$FRAMES/$(basename "$src").t$t.jpg"
+  # -ss BEFORE -i seeks instead of decoding from the start
+  ffmpeg -y -hide_banner -loglevel error -ss "$t" -i "$src" -frames:v 1 \
+    -vf "scale='if(gt(iw,ih),512,-2)':'if(gt(iw,ih),-2,512)'" -q:v 4 "$frame"
+  printf '%s\t%s\n' "$frame" "$src" >> "$MANIFEST"
+done
+```
+
+Offsets are percentages of the real duration — a fixed `-ss 90` silently
+produces nothing on a clip shorter than 90 s.
+
+### Proxy rules
+
+- Formats Claude can see: **JPEG, PNG, GIF, WebP only.** HEIC, DNG and video
+  are invisible until converted here.
+- Never re-derive metadata from a proxy. STEP 2 already read the originals;
+  proxies have stripped or rewritten EXIF.
+- Never pass a proxy or a frame to `apto` or `pono`. Those act on originals.
+
+---
+
 ## STEP 3: Gather Non-Deterministic Features (Vision)
 
-Analyze representative images and video frames for visual evidence.
+Read the **proxies** from STEP 2.5, never the originals.
 
 ### For each representative file
 
@@ -253,16 +331,22 @@ Analyze representative images and video frames for visual evidence.
 - **Social context**: how many people? seated? standing? moving?
 - **Clothing / dress**: formal, casual, sportswear, costume, seasonal layers
 
-### For videos
+For videos, read the frames STEP 2.5 already extracted under `$FRAMES` and
+treat the set as one asset — they share a capture time.
+
+### When to escalate past 512 px
+
+512 px carries every signal above. It does not carry legible small text, and a
+clock face, a phone screen, a departure board or dated signage in frame is a
+far stronger time anchor than any amount of light analysis. If a proxy hints at
+one, re-derive that single file at 2048 px and read it again:
 
 ```bash
-# Extract representative frames for analysis
-ffmpeg -i video.mp4 -ss 0:10 -vframes 1 frame1.jpg   # start
-ffmpeg -i video.mp4 -ss 0:50 -vframes 1 frame2.jpg   # middle
-ffmpeg -i video.mp4 -ss 0:90 -vframes 1 frame3.jpg   # end
+magick "$src" -auto-orient -resize 2048x2048\> -quality 85 "$WORK/hi.jpg"
 ```
 
-Analyze frames for scene context.
+Escalate for a handful of files, never for a cluster — each one costs roughly
+the token budget of twelve proxies.
 
 **Do NOT try to identify the city, building, or landmark.**
 
@@ -287,11 +371,15 @@ trivial: the file IS its own cluster.
 
 ### Output
 
+<!-- jscpd:ignore-start -->
+
 ```text
 Cluster 1 (N=X): [name], [time window], [location], [confidence]
 Cluster 2 (N=X): [name], [time window], [location], [confidence]
 ...
 ```
+
+<!-- jscpd:ignore-end -->
 
 ---
 
@@ -339,6 +427,8 @@ Show the user your analysis. This is purely informational — nothing changes on
 
 ### For a single file
 
+<!-- jscpd:ignore-start -->
+
 ```text
 ## Time Estimate: 12:37 PM
 **Confidence: medium**
@@ -353,7 +443,11 @@ Show the user your analysis. This is purely informational — nothing changes on
 - Two people beside a parked car, long shadows cast to the east
 ```
 
+<!-- jscpd:ignore-end -->
+
 ### For a pool
+
+<!-- jscpd:ignore-start -->
 
 ```text
 ## Pool Estimate: <N> assets in <K> clusters
@@ -370,10 +464,14 @@ Anchor points:
 - The rest assigned by visual similarity and cross-cluster consistency
 ```
 
+<!-- jscpd:ignore-end -->
+
 Cluster names are the user's own vocabulary from STEP 1, not a fixed list.
 
 Then the per-file assignments, jittered per STEP 5 — note the uneven gaps and
 the non-zero seconds:
+
+<!-- jscpd:ignore-start -->
 
 ```text
 <file>  →  09:14:22  (<phase 1>)  estimated
@@ -383,7 +481,11 @@ the non-zero seconds:
 <file>  →  09:47:12  (<phase 1>)  estimated
 ```
 
+<!-- jscpd:ignore-end -->
+
 **Ask for confirmation** before proceeding to STEP 7.
+
+<!-- jscpd:ignore-start -->
 
 ```text
 Based on this analysis, the estimated timeline covers <hh:mm>–<hh:mm> for
@@ -394,12 +496,19 @@ If you confirm, I will:
   2. Run apto to write DateTimeOriginal timestamps (renaming to YYYYMMDD-HHMMSS.ext)
 ```
 
+<!-- jscpd:ignore-end -->
+
 ---
 
 ## STEP 7: Apply Changes (Only After User Confirmation)
 
 This is the ONLY step that modifies files. **Must require explicit user
 confirmation before executing.**
+
+**NEVER pass a proxy or a video frame to `apto` or `pono`.** Both act on the
+originals in `$POOL`. Every path here comes from the second column of
+`$MANIFEST` or from the original file list — never from `$PROXIES`/`$FRAMES`.
+Once STEP 7 verifies, `rm -rf "$WORK"`.
 
 ### GPS assignment (pono) — run first
 

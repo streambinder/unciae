@@ -192,13 +192,11 @@ Proposed anchors based on what you told me:
 - Estimated start: ~<hh:mm>
 - Expected sequence: <phase 1> → <phase 2> → <phase 3> → …
 
-Geolocation anchors from GPS-bearing assets:
-- Anchor A (~<lat-a>, <lon-a>): <location-a> — confirmed by phone photos
-- Anchor B (~<lat-b>, <lon-b>): <location-b> — confirmed by phone photos
-- Remaining ~Z files need pono geolocation applied
-
-Does this timeline and location match what you expect? (Yes / Adjust: ___)
+Does this timeline match what you expect? (Yes / Adjust: ___)
 ```
+
+Fold in the geolocation anchors already confirmed above rather than restating
+them.
 
 ---
 
@@ -314,6 +312,25 @@ Combine all evidence into time estimates per cluster (or per file for single).
 - **Cluster**: which cluster it belongs to
 - **Pool adjustment**: why it was pulled/pushed from initial estimate
 
+### Jitter — mandatory
+
+Estimated times MUST look like they came off a camera, not off a scheduler.
+Never emit a run of round or evenly spaced values.
+
+- **Minutes**: offset each file by a fresh ±3–12 min from the cluster's centre.
+  Never land on `:00`, `:15`, `:30` or `:45` unless real EXIF says so.
+- **Seconds**: always populate them, never `:00`. `18:07:33` is plausible,
+  `18:00:00` is not.
+- **Spacing**: do NOT distribute a cluster's files at a fixed step (every
+  2 min, every 5 min). Vary the gaps — bursts of a few seconds, then a
+  several-minute lull, mirroring how people actually shoot.
+- **Containment**: jitter stays _inside_ the cluster window. Perturbing a file
+  out of its cluster, or past a neighbouring cluster's boundary, is a bug.
+- **Ordering**: after jittering, re-check that the sequence from STEP 1 still
+  holds. Randomness must never reorder phases.
+- **Real metadata wins**: files with trustworthy `DateTimeOriginal` keep their
+  exact timestamp. Jitter applies only to _estimated_ times.
+
 ---
 
 ## STEP 6: Present Findings for Review
@@ -334,9 +351,6 @@ Show the user your analysis. This is purely informational — nothing changes on
 ### Visual Evidence
 - Outdoor, bright sunny, golden hour light
 - Two people beside a parked car, long shadows cast to the east
-
-### Pool Context
-- N/A (single file)
 ```
 
 ### For a pool
@@ -347,20 +361,27 @@ Show the user your analysis. This is purely informational — nothing changes on
 - Cluster <phase 1> (N=<n>): 09:12–09:58, indoor, bright window light, high
 - Cluster <phase 2> (N=<n>): 10:27–11:04, interior, dim artificial light, high
 - Cluster <phase 3> (N=<n>): 11:04–11:31, open plaza, hard overhead sun, high
-- Cluster <phase 4> (N=<n>): 17:53–18:15, outdoor grounds, golden hour, high
-- Cluster <phase 5> (N=<n>): 18:34–19:55, interior, warm low light, high
-- Cluster <phase 6> (N=<n>): 20:50–22:53, garden, string lights, dark sky, high
-- Cluster <phase 7> (N=<n>): 00:13–01:02, dark indoor/outdoor, flash, high
+- …
 - Cluster <phase 8> (N=<n>): 01:14–05:01, very dark, blue-sky gradient, medium
-- Cluster <phase 9> (N=<n>): 12:48–13:46, daylight, outdoor grounds, high
 
 Anchor points:
-- EXIF DateTimeOriginal provides precise timestamps for <n> of <N> files
+- EXIF DateTimeOriginal is precise for <n> of <N> files
 - Raw files (<n>) from a second camera corroborate the timeline
-- Remaining files assigned by visual similarity and cross-cluster consistency
+- The rest assigned by visual similarity and cross-cluster consistency
 ```
 
 Cluster names are the user's own vocabulary from STEP 1, not a fixed list.
+
+Then the per-file assignments, jittered per STEP 5 — note the uneven gaps and
+the non-zero seconds:
+
+```text
+<file>  →  09:14:22  (<phase 1>)  estimated
+<file>  →  09:14:51  (<phase 1>)  estimated, burst with previous
+<file>  →  09:23:07  (<phase 1>)  estimated
+<file>  →  09:41:38  (<phase 1>)  EXIF, kept verbatim
+<file>  →  09:47:12  (<phase 1>)  estimated
+```
 
 **Ask for confirmation** before proceeding to STEP 7.
 
@@ -402,10 +423,14 @@ and renames the file to `YYYYMMDD-HHMMSS.ext`. The skill **must not** manually
 rename files; it relies entirely on `apto` for both timestamp metadata and
 renaming. Process ALL files.
 
+Feed `apto` the jittered value from STEP 5, seconds included — a pool of
+`hh:mm:00` timestamps is the giveaway that they were generated.
+
 ```bash
-while IFS= read -r file; do
-  apto "$file" --time "<YYYY:MM:DD hh:mm:ss>" --tz "<HH:MM>" 2>&1
-done < /tmp/pool_files.txt > /tmp/apto_output.txt
+# each line: <path>\t<YYYY:MM:DD hh:mm:ss>, seconds never 00
+while IFS=$'\t' read -r file stamp; do
+  apto "$file" --time "$stamp" --tz "<HH:MM>" 2>&1
+done < /tmp/pool_times.tsv > /tmp/apto_output.txt
 ```
 
 **⚠️ Key rule:** `apto` renames, `pono` does not. Running `pono` first sidesteps
@@ -427,12 +452,9 @@ missing files, etc.).
 
 #### After `pono`, verify 100% GPS coverage
 
-```bash
-exiftool -GPSLatitude -GPSLongitude /path/to/pool/*.jpg 2>/dev/null | grep -c '+'
-```
-
-This count should match the number of processable files. Note: `*.jpg` is just
-one extension; also check `*.jpeg`, `*.JPG`, `*.webp`, `*.mp4`, `*.mov`, `*.dng`.
+Re-run the STEP 2 GPS check across every extension present in the pool
+(`*.jpeg`, `*.JPG`, `*.webp`, `*.mp4`, `*.mov`, `*.dng`, not just `*.jpg`).
+The count should now match the number of processable files.
 
 ### Failure handling
 

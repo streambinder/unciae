@@ -84,11 +84,18 @@ Multi-image: suffix off repository, e.g.
 
 ### 5.2 Container Tags
 
-Every push publishes at least `:latest` + `${{github.sha}}` same digest.
+Every push to `master` publishes at least `:latest` + `${{github.sha}}` same digest.
 
 ```yaml
 tags: |
   ghcr.io/${{github.repository}}:latest
+  ghcr.io/${{github.repository}}:${{github.sha}}
+```
+
+PRs and feature branches may publish only `${{github.sha}}` to avoid polluting `:latest`:
+
+```yaml
+tags: |
   ghcr.io/${{github.repository}}:${{github.sha}}
 ```
 
@@ -191,7 +198,9 @@ if single-purpose (`dependabot-auto-merge.yml`, `codeql.yml`).
 
 Publish steps (image push, npm/pip publish, `gh release`, `terraform apply`)
 must be gated `if: github.event_name != 'pull_request'` or trigger only
-`tags: ['v*']`. Never `pull_request_target`. Secrets for publish never
+`tags: ['v*']`. Exception: container image push to `${{github.sha}}` tag only
+is allowed in PRs and feature branches to validate build, never `:latest` or
+`:release`. Never `pull_request_target`. Secrets for publish never
 referenced in PR-reachable steps.
 
 ### 11.2 Concurrency

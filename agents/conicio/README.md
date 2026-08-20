@@ -65,7 +65,7 @@ tags) and the user has provided or you can infer a plausible
 address/place from context, use **pono** to anchor the asset:
 
 ```bash
-pono/main.sh -a "<address>" <path-to-file>
+pono -a "<address>" <path-to-file>
 ```
 
 - Prefer a user-supplied address over inference.

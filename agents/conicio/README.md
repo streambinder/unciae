@@ -519,18 +519,38 @@ pono -a "<address>" $(cat /tmp/location_a_no_gps.txt)
 a file to quietly leave behind. Having a good capture time already is not a
 reason to skip a file — it decides which _mode_ `apto` runs in, nothing more.
 
-Two hard prohibitions:
+Three hard prohibitions. Each one has been violated in a real run, and two of
+those runs damaged the pool:
 
-- **Never rename by hand.** `apto` owns naming.
-- **Never write a timestamp with `exiftool`.** `apto -e` reads `CreateDate`, so
-  a file stamped only with `DateTimeOriginal` becomes permanently unprocessable
-  by it. Use `apto --time` instead — it writes both tags and renames.
+- **Never `mv` a media file.** `apto` owns naming. A hand-written `mv` whose
+  target name comes out wrong silently overwrites whatever already holds that
+  name — one such loop destroyed four assets before anyone noticed.
+- **Never write a timestamp with `exiftool`.** `apto --time` writes every tag
+  `apto` later reads, renames in the same step, and cannot leave `_original`
+  backups behind. A bare `exiftool -Tag=value` keeps the pre-edit file as
+  `<name>_original` unless you remember `-overwrite_original`.
+- **Never rename a file whose write failed.** If `apto` could not stamp it, it
+  stays non-compliant and gets reported. A correct-looking name over metadata
+  that was never written is worse than a visible failure — it is unfindable
+  later.
 
-#### Pass 1 — files whose time you estimated
+If a file resists all three passes below, the answer is to report it, never to
+reach for `exiftool` or `mv` to force it over the line.
 
-Only the files with no usable capture time of their own. Feed each the jittered
-value from STEP 5, seconds included — a pool of `hh:mm:00` timestamps is the
-giveaway that they were generated.
+#### Pass 1 — files whose time you supply
+
+Everything whose capture time has to come from you rather than from the file:
+
+- **No usable time at all** — the estimate from STEP 5.
+- **A time that is present but wrong.** Messaging-app exports are the common
+  case: a file re-shared days later carries the export date, not the capture
+  date. STEP 4 already assigned it to a cluster on the real date; pass that
+  date here. Do not `mv` it into a new name and do not patch the tag by hand.
+- **A time in a tag the file's own metadata contradicts**, where you have
+  decided which one is right.
+
+Feed each the value chosen in STEP 5, seconds included — a pool of `hh:mm:00`
+timestamps is the giveaway that they were generated.
 
 ```bash
 # each line: <path>\t<YYYY:MM:DD hh:mm:ss>, seconds never 00
@@ -543,7 +563,9 @@ done < /tmp/pool_times.tsv
 
 Do **not** build a file list. `apto` takes the directory and walks it itself,
 matches extensions case-insensitively, and `--skip-compliant` skips whatever
-Pass 1 already renamed.
+Pass 1 already renamed. `-e` prefers `CreateDate` and falls back to
+`DateTimeOriginal`, so a file carrying only the latter is handled here — it is
+not a reason to go patch tags.
 
 ```bash
 apto -e --skip-compliant --skip-failures --tz "$TZ" "$POOL"
@@ -559,11 +581,12 @@ Every pass is cheap because compliant files are skipped.
 ```bash
 COMPLIANT='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].*'
 # these are apto's own extensions — a wider list never converges
-todo() { find "$POOL" -type f -not -name '.*' ! -name "$COMPLIANT" \( \
+media() { find "$POOL" -maxdepth 1 -type f -not -name '.*' \( \
   -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \
   -o -iname '*.heic' -o -iname '*.dng' -o -iname '*.arw' -o -iname '*.nef' \
   -o -iname '*.mp4' -o -iname '*.mov' -o -iname '*.m4v' -o -iname '*.avi' \
-  -o -iname '*.3gp' -o -iname '*.wmv' \); }
+  -o -iname '*.3gp' -o -iname '*.wmv' \) "$@"; }
+todo() { media ! -name "$COMPLIANT"; }
 
 prev=-1
 while true; do
@@ -581,7 +604,26 @@ todo
 
 This loop **is** the verification — there is no separate count to eyeball. Do
 not describe the run as complete while `todo` still prints anything; list those
-files to the user with the reason `apto` gave.
+files to the user with the reason `apto` gave. A file left in `todo` is the
+expected outcome for something unprocessable. Forcing it compliant by hand is
+not a fix, it is a lie in the filename.
+
+Then two integrity checks, both cheap and both catching a prohibition that was
+broken rather than a tool that failed:
+
+```bash
+# 1. _original backups mean an exiftool write happened outside apto and pono.
+#    Do not just delete them: they are evidence a tool was bypassed, and they
+#    may be the only surviving copy of a file some stray mv overwrote.
+find "$POOL" -maxdepth 1 -name '*_original'
+
+# 2. the pool must not have shrunk since the STEP 2 inventory
+echo "inventory $(wc -l < /tmp/pool_files.txt | tr -d ' ') -> now $(media | wc -l | tr -d ' ')"
+```
+
+A lower count means files were overwritten, and only `mv` can do that. Stop,
+name the missing files, and check whether an `_original` still holds one of
+them — do not carry on and report success on the survivors.
 
 **⚠️ Key rule:** `apto` renames, `pono` does not. Running `pono` first sidesteps
 the problem; inverting the order forces `pono` to target the new
@@ -605,6 +647,11 @@ The count should now match the number of processable files.
   This is why STEP 7 loops: the next pass resumes past everything already
   renamed. If the remainder stops shrinking, the file at the head of it is the
   one to name to the user.
+- **`apto` wrote nothing but you have a name for the file**: leave it alone.
+  `0 image files updated` plus a rename by hand produces a file whose name
+  claims a capture time its metadata does not carry.
+- **A messaging-app export is dated days after the event**: that is Pass 1
+  work, not a rename. Give `apto --time` the cluster date from STEP 4.
 - **Multiple results from `pono -d`**: ask user to disambiguate with a more
   specific address. Do NOT guess.
 - **No GPS-bearing assets in pool**: fall back to address-based geolocation

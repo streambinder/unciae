@@ -26,8 +26,6 @@ stand for whatever vocabulary the user actually supplies.
 
 ## Complete Workflow — One Flow
 
-<!-- jscpd:ignore-start -->
-
 ```text
 ┌───────────────────────────────────────────────────────────────┐
 │ STEP 0  Probe available tools (exiftool, ffprobe, magick, …)  │
@@ -49,8 +47,6 @@ stand for whatever vocabulary the user actually supplies.
 │ STEP 7  If user confirms → run pono (GPS) + apto (timestamps) │
 └───────────────────────────────────────────────────────────────┘
 ```
-
-<!-- jscpd:ignore-end -->
 
 Steps 0 and 1–6 are **informational only** — they change nothing on disk.
 Step 7 is the **only destructive/action step**, and it requires explicit
@@ -162,8 +158,6 @@ reputable coordinates. Use these as **geolocation anchors**:
 
 4. **Confirm anchor hypotheses with the user:**
 
-   <!-- jscpd:ignore-start -->
-
    ```text
    Proposed anchors, from what you told me and what the files carry:
      Date <YYYY-MM-DD>, starting ~<hh:mm>
@@ -173,8 +167,6 @@ reputable coordinates. Use these as **geolocation anchors**:
      No GPS on ~Z files, they need pono
    Does that match? (Yes / Adjust: ___)
    ```
-
-   <!-- jscpd:ignore-end -->
 
 5. **If user confirms**, use the confirmed anchors to run `pono` with
    `@lat,lon` syntax (bypasses address resolution):
@@ -371,15 +363,11 @@ trivial: the file IS its own cluster.
 
 ### Output
 
-<!-- jscpd:ignore-start -->
-
 ```text
 Cluster 1 (N=X): [name], [time window], [location], [confidence]
 Cluster 2 (N=X): [name], [time window], [location], [confidence]
 ...
 ```
-
-<!-- jscpd:ignore-end -->
 
 ---
 
@@ -427,8 +415,6 @@ Show the user your analysis. This is purely informational — nothing changes on
 
 ### For a single file
 
-<!-- jscpd:ignore-start -->
-
 ```text
 ## Time Estimate: 12:37 PM
 **Confidence: medium**
@@ -443,11 +429,7 @@ Show the user your analysis. This is purely informational — nothing changes on
 - Two people beside a parked car, long shadows cast to the east
 ```
 
-<!-- jscpd:ignore-end -->
-
 ### For a pool
-
-<!-- jscpd:ignore-start -->
 
 ```text
 ## Pool Estimate: <N> assets in <K> clusters
@@ -464,14 +446,10 @@ Anchor points:
 - The rest assigned by visual similarity and cross-cluster consistency
 ```
 
-<!-- jscpd:ignore-end -->
-
 Cluster names are the user's own vocabulary from STEP 1, not a fixed list.
 
 Then the per-file assignments, jittered per STEP 5 — note the uneven gaps and
 the non-zero seconds:
-
-<!-- jscpd:ignore-start -->
 
 ```text
 <file>  →  09:14:22  (<phase 1>)  estimated
@@ -481,11 +459,7 @@ the non-zero seconds:
 <file>  →  09:47:12  (<phase 1>)  estimated
 ```
 
-<!-- jscpd:ignore-end -->
-
 **Ask for confirmation** before proceeding to STEP 7.
-
-<!-- jscpd:ignore-start -->
 
 ```text
 Based on this analysis, the estimated timeline covers <hh:mm>–<hh:mm> for
@@ -495,8 +469,6 @@ If you confirm, I will:
   1. Run pono to apply GPS coordinates to all files
   2. Run apto to write DateTimeOriginal timestamps (renaming to YYYYMMDD-HHMMSS.ext)
 ```
-
-<!-- jscpd:ignore-end -->
 
 ---
 

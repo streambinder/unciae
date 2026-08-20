@@ -1,6 +1,11 @@
 {
   "threshold": 3,
   "reporters": ["consoleFull"],
-  "ignore": ["**/__snapshots__/**", "**/node_modules/**", "**/*_test.go"],
+  "ignore": [
+    "**/__snapshots__/**",
+    "**/node_modules/**",
+    "**/*_test.go",
+    "**/agents/**"
+  ],
   "absolute": true
 }

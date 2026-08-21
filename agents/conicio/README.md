@@ -88,8 +88,11 @@ Store the help output in variables or temp files so you know:
   must be explicit (`+02:00`). `--skip-compliant` passes over files already
   named `YYYYMMDD-HHMMSS.ext`, so re-running is cheap and safe;
   `--skip-failures` continues past files whose timestamp cannot be computed.
-- **pono** also accepts directories. Addresses go through `-a`, either a place
-  name or `@lat,lon` to skip geocoding; `-d` dry-runs.
+- **pono** also accepts directories, and takes any number of paths in one call.
+  It geocodes once per invocation, before touching a file, so batch paths and
+  never run it per file. `-a` takes either a place name or `@lat,lon`; the `@`
+  is what makes it use those numbers verbatim instead of searching for them.
+  `-d` dry-runs.
 
 Proceed to STEP 1 only after all tools are confirmed present.
 
@@ -160,8 +163,10 @@ reputable coordinates. Use these as **geolocation anchors**:
    ```
 
 3. **Extract representative files per group** — pick 1–3 files from each GPS
-   cluster, note their approximate decimal lat/lon, and use `pono -a @lat,lon`
-   to push those coordinates to all non-GPS files assigned to the same place.
+   cluster and record their lat/lon at **full precision**, then use
+   `pono -a "@lat,lon"` to push those coordinates to every non-GPS file at the
+   same place. The rounded form is for showing the user; never let it reach
+   `pono`, where three decimals is roughly 100 m of error.
 
 4. **Confirm anchor hypotheses with the user:**
 
@@ -175,8 +180,10 @@ reputable coordinates. Use these as **geolocation anchors**:
    Does that match? (Yes / Adjust: ___)
    ```
 
-5. **If user confirms**, use the confirmed anchors to run `pono` with
-   `@lat,lon` syntax (bypasses address resolution):
+5. **If user confirms**, run `pono` with the `@lat,lon` form, which uses the
+   numbers verbatim instead of searching for them. If the user supplied the
+   coordinates, pass their digits unchanged — do not re-round or substitute a
+   value read off a map.
    ```bash
    pono -a "@<lat-a>,<lon-a>" location_a_files...
    pono -a "@<lat-b>,<lon-b>" location_b_files...
@@ -500,14 +507,42 @@ Once STEP 7 verifies, `rm -rf "$WORK"`.
 `pono` writes GPS EXIF and does **not** rename files, so run it before `apto`:
 the tags survive the rename and there is no new filename to track.
 
+Three rules, all of which have been broken in a real run:
+
+- **One invocation per location, every path on it.** `pono` geocodes _once_,
+  before it touches any file, then loops over every path you gave it. So a
+  batched call is one network request and a hundred writes. `xargs -I{}` turns
+  that into a hundred requests, Nominatim rate-limits you partway through, and
+  `jq` starts reporting parse errors on the HTML it gets back instead.
+- **`@` is mandatory in front of coordinates.** With it, `pono` writes the
+  numbers you gave verbatim. Without it the string is a search query: a bare
+  `-a 43.105,12.350` gets forward-geocoded and comes back as some nearby named
+  venue at entirely different coordinates.
+- **Use the coordinates the user gave, digit for digit.** Do not round them.
+  Three decimal places is about 100 m of error and puts two halves of the same
+  venue in different places.
+
 ```bash
+# One call per location. xargs builds the argument list; never xargs -I{},
+# which runs pono once per file. -0 keeps names with spaces intact, and BSD
+# xargs has neither -a nor -d, so feed it through tr.
+batch() { tr '\n' '\0' < "$1" | xargs -0 "${@:2}"; }
+
 # Option A — geolocation anchors, when GPS-bearing assets exist
-pono -a "@<lat-a>,<lon-a>" $(cat /tmp/location_a_no_gps.txt) 2>/dev/null
-pono -a "@<lat-b>,<lon-b>" $(cat /tmp/location_b_no_gps.txt) 2>/dev/null
+batch /tmp/location_a_no_gps.txt pono -a "@<lat-a>,<lon-a>"
+batch /tmp/location_b_no_gps.txt pono -a "@<lat-b>,<lon-b>"
 
 # Option B — no GPS anywhere in the pool: resolve a plain address instead
-pono -d -a "<address>" $(cat /tmp/location_a_no_gps.txt)  # dry-run, expect 1 result
-pono -a "<address>" $(cat /tmp/location_a_no_gps.txt)
+batch /tmp/location_a_no_gps.txt pono -d -a "<address>"  # dry-run first
+batch /tmp/location_a_no_gps.txt pono -a "<address>"
+```
+
+Verify before moving on: every file assigned to a location must report the
+_same_ coordinates. More than one position per venue means some files were
+written by a failed or geocoded run and have to be redone.
+
+```bash
+exiftool -q -GPSLatitude -GPSLongitude -n -T "$POOL" | sort | uniq -c | sort -rn
 ```
 
 ### Timestamp assignment (apto) — run second
@@ -522,20 +557,24 @@ reason to skip a file — it decides which _mode_ `apto` runs in, nothing more.
 Three hard prohibitions. Each one has been violated in a real run, and two of
 those runs damaged the pool:
 
-- **Never `mv` a media file.** `apto` owns naming. A hand-written `mv` whose
-  target name comes out wrong silently overwrites whatever already holds that
-  name — one such loop destroyed four assets before anyone noticed.
-- **Never write a timestamp with `exiftool`.** `apto --time` writes every tag
-  `apto` later reads, renames in the same step, and cannot leave `_original`
-  backups behind. A bare `exiftool -Tag=value` keeps the pre-edit file as
-  `<name>_original` unless you remember `-overwrite_original`.
-- **Never rename a file whose write failed.** If `apto` could not stamp it, it
-  stays non-compliant and gets reported. A correct-looking name over metadata
-  that was never written is worse than a visible failure — it is unfindable
-  later.
+- **Never move, rename or copy a media file.** `apto` owns naming. A
+  hand-written `mv` whose target name comes out wrong silently overwrites
+  whatever already holds that name — one such loop destroyed four assets before
+  anyone noticed. `cp` to the compliant name and delete the original is the
+  same act with the count left intact to hide it.
+- **`exiftool` never writes. Anything.** Not timestamps, not GPS, not a tag you
+  think is harmless. `apto` owns time, `pono` owns location, and both pass
+  `-overwrite_original`; a bare `exiftool -Tag=value` does not, so it leaves the
+  pre-edit file as `<name>_original`. One run littered 257 of them writing GPS
+  by hand after `pono` failed.
+- **Never make a file compliant when its write failed.** If `apto` could not
+  stamp it, it keeps its original name and gets reported. A correct-looking
+  name over metadata that was never written is worse than a visible failure —
+  it is unfindable later, and nothing downstream can tell it apart.
 
-If a file resists all three passes below, the answer is to report it, never to
-reach for `exiftool` or `mv` to force it over the line.
+When a tool fails, the answer is to fix the invocation or report the file.
+Reaching past `apto` and `pono` to force the result is how every pool has been
+damaged so far.
 
 #### Pass 1 — files whose time you supply
 
@@ -613,17 +652,23 @@ broken rather than a tool that failed:
 
 ```bash
 # 1. _original backups mean an exiftool write happened outside apto and pono.
-#    Do not just delete them: they are evidence a tool was bypassed, and they
-#    may be the only surviving copy of a file some stray mv overwrote.
+#    Do NOT delete them. They are evidence a tool was bypassed, they may be the
+#    only surviving copy of a file some stray mv overwrote, and the files they
+#    shadow may now carry hand-written metadata nobody verified. Report them.
 find "$POOL" -maxdepth 1 -name '*_original'
 
-# 2. the pool must not have shrunk since the STEP 2 inventory
-echo "inventory $(wc -l < /tmp/pool_files.txt | tr -d ' ') -> now $(media | wc -l | tr -d ' ')"
+# 2. every file in the STEP 2 inventory must still be accounted for. Compare
+#    the mapping, not the count: cp to a new name plus rm of the old keeps the
+#    count identical while losing whichever file already held that name.
+cut -f2 "$MANIFEST" | sort -u > /tmp/expected.txt
+wc -l < /tmp/expected.txt
+media | wc -l
 ```
 
-A lower count means files were overwritten, and only `mv` can do that. Stop,
-name the missing files, and check whether an `_original` still holds one of
-them — do not carry on and report success on the survivors.
+A count that dropped means files were overwritten. A count that held while
+names went missing means the same thing. Either way: stop, name what is gone,
+check whether an `_original` still holds a copy, and do not report success on
+the survivors.
 
 **⚠️ Key rule:** `apto` renames, `pono` does not. Running `pono` first sidesteps
 the problem; inverting the order forces `pono` to target the new
@@ -652,6 +697,12 @@ The count should now match the number of processable files.
   claims a capture time its metadata does not carry.
 - **A messaging-app export is dated days after the event**: that is Pass 1
   work, not a rename. Give `apto --time` the cluster date from STEP 4.
+- **`pono` prints `jq: parse error`**: Nominatim is rate-limiting you, which
+  means the run is issuing one request per file. Batch every path for a
+  location into a single invocation and retry — do not fall back to `exiftool`.
+- **`pono` reports coordinates you did not ask for**: the `@` prefix was
+  missing, so the argument was geocoded as a search string. Re-run with
+  `@lat,lon` and rewrite every file the bad run touched.
 - **Multiple results from `pono -d`**: ask user to disambiguate with a more
   specific address. Do NOT guess.
 - **No GPS-bearing assets in pool**: fall back to address-based geolocation

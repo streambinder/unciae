@@ -5,7 +5,7 @@
     "**/__snapshots__/**",
     "**/node_modules/**",
     "**/*_test.go",
-    "**/agents/**"
+    "**/pi_skills/**"
   ],
   "absolute": true
 }

@@ -2,7 +2,6 @@
 name: conicio
 description: >-
   Estimate and set capture time + GPS of media assets using metadata + visual analysis, with optional clustering for pools
-tools: read, bash
 ---
 
 # conicio
@@ -34,6 +33,7 @@ Four tools, one job each. Nothing else touches the pool.
 | `apto`              | writes capture time and renames                                      |
 | `pono`              | writes GPS                                                           |
 | `magick` / `ffmpeg` | build the proxies you look at, inside `$WORK`                        |
+| `describe_images`   | the **only** way an image is ever looked at                          |
 
 Read metadata **once**, into `$WORK/inventory.json`, and treat it as the only
 source of truth. Every decision you reach — cluster, time, location — goes into
@@ -126,6 +126,7 @@ PROXIES="$WORK/proxies"; FRAMES="$WORK/frames"
 INVENTORY="$WORK/inventory.json"                   # STEP 2 writes this once
 ASSIGNMENTS="$WORK/assignments.tsv"                # STEP 4/5 append to this
 MANIFEST="$WORK/manifest.tsv"                      # STEP 2.5 appends to this
+VISION="$WORK/vision.md"                           # STEP 3 appends to this
 mkdir -p "$PROXIES" "$FRAMES"
 ```
 
@@ -280,6 +281,12 @@ Never read originals for vision. A 12 MP photo costs ~4784 visual tokens; a
 stricter per-image dimension limit and _rejects_ oversized ones, so on any pool
 larger than 20 files proxies are a correctness requirement, not an optimization.
 
+Proxies exist to be handed to `describe_images` (STEP 3), never to be `read`
+into this conversation. An image that lands in the context makes every
+subsequent request multimodal, and a multimodal request does not read or write
+the prefix cache — so one stray `read` turns every later turn of the run into a
+full re-prefill of the whole conversation.
+
 Proxy names keep the original extension before `.jpg`, so `IMG_1.jpg` and
 `IMG_1.mov` cannot collide:
 
@@ -310,9 +317,10 @@ done < /tmp/pool_files.txt
 rm -f "$WORK/.pv.jpg"
 ```
 
-`-auto-orient` is **mandatory**: Claude never receives EXIF, so an unrotated
-proxy is analysed sideways and silently wrecks shadow-direction reasoning.
-`512x512>` only ever shrinks — smaller originals pass through untouched.
+`-auto-orient` is **mandatory**: the vision model never receives EXIF, so an
+unrotated proxy is analysed sideways and silently wrecks shadow-direction
+reasoning. `512x512>` only ever shrinks — smaller originals pass through
+untouched.
 
 ### Video frames
 
@@ -333,19 +341,32 @@ produces nothing on a clip shorter than 90 s.
 
 ### Proxy rules
 
-- Formats Claude can see: **JPEG, PNG, GIF, WebP only.** HEIC, DNG and video
-  are invisible until converted here.
+- Formats the vision model can see: **JPEG, PNG, GIF, WebP only.** HEIC, DNG and
+  video are invisible until converted here.
 - Never re-derive metadata from a proxy. STEP 2 already read the originals;
   proxies have stripped or rewritten EXIF.
 - Never pass a proxy or a frame to `apto` or `pono`. Those act on originals.
+- Never pass a proxy to `read`. Vision goes through `describe_images`, always.
 
 ---
 
 ## STEP 3: Gather Non-Deterministic Features (Vision)
 
-Read the **proxies** from STEP 2.5, never the originals.
+`describe_images` is the only way you look at an image. It analyses each file in
+a throwaway context and hands back text, so the pixels never enter this
+conversation and this conversation stays cacheable.
 
-### For each representative file
+Pass **proxies** from STEP 2.5, never originals, and batch every proxy of a
+cluster into one call rather than one call per file:
+
+```text
+describe_images(paths: ["$PROXIES/IMG_1.jpg.jpg", "$PROXIES/IMG_2.dng.jpg", ...])
+```
+
+### What to ask for
+
+The default question already covers the whole checklist below; only pass an
+explicit `question` when a cluster needs something extra.
 
 - **Shadow direction**: where is the sun? (Panels)
 - **Shadow length**: golden hour vs. midday
@@ -356,22 +377,30 @@ Read the **proxies** from STEP 2.5, never the originals.
 - **Social context**: how many people? seated? standing? moving?
 - **Clothing / dress**: formal, casual, sportswear, costume, seasonal layers
 
-For videos, read the frames STEP 2.5 already extracted under `$FRAMES` and
-treat the set as one asset — they share a capture time.
+For videos, pass the frames STEP 2.5 extracted under `$FRAMES` in the same call
+and treat the set as one asset — they share a capture time.
+
+### Write it down
+
+Append every batch's output to `$VISION` as it comes back, keyed by proxy path,
+then read that file in STEP 4 and STEP 5. Same rule as `$INVENTORY` and
+`$ASSIGNMENTS`: describing a proxy twice is a re-run of the expensive part, and
+a description you kept only in the last message drifts when you retype it.
 
 ### When to escalate past 512 px
 
 512 px carries every signal above. It does not carry legible small text, and a
 clock face, a phone screen, a departure board or dated signage in frame is a
-far stronger time anchor than any amount of light analysis. If a proxy hints at
-one, re-derive that single file at 2048 px and read it again:
+far stronger time anchor than any amount of light analysis. If a description
+mentions one, re-derive that single file at 2048 px and describe it again:
 
 ```bash
-magick "$src" -auto-orient -resize 2048x2048\> -quality 85 "$WORK/hi.jpg"
+magick "$src" -auto-orient -resize 2048x2048\> -quality 85 "$WORK/hi/$(basename "$src").jpg"
 ```
 
-Escalate for a handful of files, never for a cluster — each one costs roughly
-the token budget of twelve proxies.
+Then one `describe_images` call over the escalated files, asking specifically
+for the text. Escalate for a handful of files, never for a cluster — each one
+costs roughly the token budget of twelve proxies.
 
 **Do NOT try to identify the city, building, or landmark.**
 

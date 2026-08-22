@@ -305,16 +305,23 @@ proxy → original through the manifest, never by reconstructing the name.
 while IFS= read -r src; do
   proxy="$PROXIES/$(basename "$src").jpg"
   [ -s "$proxy" ] && continue                    # cached from an earlier run
-  # fast path: RAW/HEIC carry a full-size JPEG preview, no demosaic needed.
-  # exiftool exits 0 with empty output when absent, so test the size, not $?
-  cand="$WORK/.pv.jpg"
-  exiftool -b -PreviewImage "$src" > "$cand" 2>/dev/null
-  [ -s "$cand" ] || exiftool -b -JpgFromRaw "$src" > "$cand" 2>/dev/null
-  [ -s "$cand" ] || cand="$src"
-  magick "$cand" -auto-orient -resize 512x512\> -quality 80 "$proxy" || continue
-  printf '%s\t%s\n' "$proxy" "$src" >> "$MANIFEST"
+  # RAW needs this: magick hands DNG to darktable-cli, which is often absent,
+  # and the embedded preview skips the demosaic anyway. exiftool exits 0 with
+  # empty output when there is no preview, so test the size, not $?
+  pv="$WORK/.pv.jpg"
+  exiftool -b -PreviewImage "$src" > "$pv" 2>/dev/null
+  [ -s "$pv" ] || exiftool -b -JpgFromRaw "$src" > "$pv" 2>/dev/null
+  # Branch. NEVER assign "$src" to a variable that later gets cleaned up:
+  # one shared name for "scratch file" and "the original" turns the rm below
+  # into a delete of the source. That mistake cost 308 of 331 assets once.
+  if [ -s "$pv" ]; then
+    magick "$pv"  -auto-orient -resize 512x512\> -quality 80 "$proxy"
+  else
+    magick "$src" -auto-orient -resize 512x512\> -quality 80 "$proxy"
+  fi
+  [ -s "$proxy" ] && printf '%s\t%s\n' "$proxy" "$src" >> "$MANIFEST"
+  rm -f "$WORK/.pv.jpg"        # literal path, never a variable
 done < /tmp/pool_files.txt
-rm -f "$WORK/.pv.jpg"
 ```
 
 `-auto-orient` is **mandatory**: the vision model never receives EXIF, so an
@@ -338,6 +345,23 @@ done
 
 Offsets are percentages of the real duration — a fixed `-ss 90` silently
 produces nothing on a clip shorter than 90 s.
+
+### Before leaving this step, count the pool
+
+Building proxies must not change `$POOL`. Assert it here, while the step that
+would have caused a change is still the one you are standing in — STEP 7 is far
+too late to discover the pool shrank.
+
+```bash
+before=$(jq 'length' "$INVENTORY")
+after=$(wc -l < /tmp/pool_files.txt | tr -d ' ')
+echo "inventory $before -> pool $after"
+[ "$before" = "$after" ] || echo "STOP: the pool changed while building proxies"
+```
+
+If those differ, stop and report it. Do not continue into the vision step:
+proxies of files that no longer exist analyse perfectly well and tell you
+nothing is wrong.
 
 ### Proxy rules
 
@@ -615,9 +639,15 @@ exiftool -q -GPSLatitude -GPSLongitude -n -T "$POOL" | sort | uniq -c | sort -rn
 a file to quietly leave behind. Having a good capture time already is not a
 reason to skip a file — it decides which _mode_ `apto` runs in, nothing more.
 
-Three hard prohibitions. Each one has been violated in a real run, and two of
+Four hard prohibitions. Each one has been violated in a real run, and three of
 those runs damaged the pool:
 
+- **Nothing in `$POOL` is ever deleted.** Not by `rm`, not by `find -delete`,
+  not by `shutil` or `os.remove`, not as cleanup, not "just the temp copy".
+  `apto` renames and `pono` writes tags; between them the file set that entered
+  STEP 2 is the file set that leaves STEP 7. Every `rm` you write must name a
+  literal path under `$WORK` — if the argument is a variable, it can be holding
+  something else by the time it runs.
 - **Never move, rename or copy a media file.** `apto` owns naming. A
   hand-written `mv` whose target name comes out wrong silently overwrites
   whatever already holds that name — one such loop destroyed four assets before

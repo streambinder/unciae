@@ -2,7 +2,7 @@
 name: conicio
 description: >-
   Estimate and set capture time + GPS of media assets using metadata + visual analysis, with optional clustering for pools
-tools: read, grep, bash, find, ls
+tools: read, bash
 ---
 
 # conicio
@@ -23,6 +23,27 @@ road trip or an unsorted camera dump all go through the same steps. Phase
 names, locations and expected ordering come from the user in STEP 1 — never
 from a built-in template. Placeholders below (`<phase 1>`, `<location-a>`)
 stand for whatever vocabulary the user actually supplies.
+
+## Division of Labour
+
+Four tools, one job each. Nothing else touches the pool.
+
+| Tool                | Role                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| `exiftool`          | **reads only.** Never writes a tag — not time, not GPS, not anything |
+| `apto`              | writes capture time and renames                                      |
+| `pono`              | writes GPS                                                           |
+| `magick` / `ffmpeg` | build the proxies you look at, inside `$WORK`                        |
+
+Read metadata **once**, into `$WORK/inventory.json`, and treat it as the only
+source of truth. Every decision you reach — cluster, time, location — goes into
+`$WORK/assignments.tsv` the moment you make it. Later steps read those files.
+
+Do not re-query a file for metadata the inventory already holds, do not re-derive
+a grouping you already computed, and never retype a table of assignments into a
+new script: write it down once, read it back. A run that re-parses the same JSON
+in thirty separate snippets is doing the same work thirty times and drifting a
+little further each time.
 
 ## Complete Workflow — One Flow
 
@@ -54,16 +75,16 @@ user confirmation.
 
 ---
 
-## STEP 0: Probe Available Tools
+## STEP 0: Probe Tools, Prepare the Work Directory
 
 Before doing any metadata extraction or file modification, verify that
-`exiftool`, `ffprobe`, `ffmpeg`, `magick`, `apto` and `pono` are available and
+`exiftool`, `ffprobe`, `ffmpeg`, `magick`, `jq`, `apto` and `pono` are available and
 discover their usage patterns. **Block execution if any required tool is
 missing.**
 
 ```bash
 # Check all required tools
-for cmd in exiftool ffprobe ffmpeg magick apto pono; do
+for cmd in exiftool ffprobe ffmpeg magick jq apto pono; do
   if ! command -v "$cmd" &> /dev/null; then
     echo "ERROR: '$cmd' is not available. Cannot proceed."
     exit 1
@@ -93,6 +114,22 @@ Store the help output in variables or temp files so you know:
   never run it per file. `-a` takes either a place name or `@lat,lon`; the `@`
   is what makes it use those numbers verbatim instead of searching for them.
   `-d` dry-runs.
+
+Then set up the work directory. **It is fixed — do not invent a path**, and it
+MUST live outside the pool: anything left inside gets renamed by `apto` and
+geotagged by `pono` in STEP 7, and corrupts the coverage counts.
+
+```bash
+POOL="/path/to/pool"                               # the pool being processed
+WORK="${TMPDIR:-/tmp}/conicio/$(basename "$POOL")" # never inside $POOL
+PROXIES="$WORK/proxies"; FRAMES="$WORK/frames"
+INVENTORY="$WORK/inventory.json"                   # STEP 2 writes this once
+ASSIGNMENTS="$WORK/assignments.tsv"                # STEP 4/5 append to this
+MANIFEST="$WORK/manifest.tsv"                      # STEP 2.5 appends to this
+mkdir -p "$PROXIES" "$FRAMES"
+```
+
+The whole tree is disposable — delete it once STEP 7 verifies.
 
 Proceed to STEP 1 only after all tools are confirmed present.
 
@@ -130,37 +167,25 @@ asset anchors location for all files taken at the same place.
 After intake, extract GPS tags from all files to identify which already have
 reputable coordinates. Use these as **geolocation anchors**:
 
-1. **Find GPS-bearing files:**
+1. **Find GPS-bearing files.** The inventory from STEP 2 already holds signed
+   decimal lat/lon — `exiftool -n` emits decimals, so there is never any reason
+   to parse `43 deg 6' 18.30" N` by hand.
 
    ```bash
-   exiftool -DateTimeOriginal -GPSLatitude -GPSLongitude -Software -ImageHeight \
-     /path/to/pool/*.jpg *.jpeg *.JPG 2>/dev/null | grep -B0 'GPS Latitude'
+   jq -r '.[] | select(.GPSLatitude) | [.FileName, .GPSLatitude, .GPSLongitude] | @tsv' "$INVENTORY"
    ```
 
-   (Adjust extensions and apply the same for `.mp4`/`.mov`/`.webp`/`.dng`.)
-
-2. **Cluster GPS points by approximate position** — files with similar
-   lat/lon are at the same place. Each cluster becomes a geolocation anchor.
-   Use exiftool's decimal output for grouping:
+2. **Cluster those points by position.** Round to 3 decimals (~100 m) on
+   **both** axes — latitude alone merges venues that share a parallel.
 
    ```bash
-   exiftool -GPSLatitude -GPSLongitude -DateTimeOriginal -Software \
-     -d '%Y-%m-%d %H:%M:%S' /path/to/pool/* 2>/dev/null | \
-     python3 -c "
-   import sys, re
-   # Cluster by approximate decimal latitude (±0.001 ≈ ±100m)
-   groups = {}
-   for line in sys.stdin:
-       gps = re.search(r'(\\d+) deg (\\d+)\\'(\\d+)\\\"\\s*([NS])', line)
-       if not gps: continue
-       dec = (int(gps.group(1)) + int(gps.group(2))/60 + int(gps.group(3))/3600)
-       if gps.group(4) == 'S': dec = -dec
-       dec = round(dec, 3)
-       groups.setdefault(dec, []).append(line.strip())
-   for k,v in sorted(groups.items()):
-       print(f'Group {k}: {len(v)} files')
-   "
+   jq -r '.[] | select(.GPSLatitude)
+          | "\(.GPSLatitude*1000|round/1000),\(.GPSLongitude*1000|round/1000)"' \
+     "$INVENTORY" | sort | uniq -c | sort -rn
    ```
+
+   Each surviving group is a geolocation anchor. Rounding is for _grouping and
+   display only_ — carry the full-precision value forward.
 
 3. **Extract representative files per group** — pick 1–3 files from each GPS
    cluster and record their lat/lon at **full precision**, then use
@@ -214,28 +239,37 @@ Run `exiftool` and `ffprobe` on all files in the pool (or the single file).
 - **ImageWidth / ImageHeight / FileSize** — asset profiling
 - **ModifyDate** — secondary signal (often useful when DateTimeOriginal missing)
 
-### For images
+### One read, one file
+
+Dump everything in a single pass to `$INVENTORY` and never query a file for
+metadata again. `-n` gives signed decimals instead of DMS strings, `-json`
+gives structured output instead of aligned text, and `-api QuickTimeUTC=1`
+stops mp4/mov dates being misread as local time.
 
 ```bash
-exiftool -DateTimeOriginal -CreateDate -GPSLatitude -GPSLongitude \
-  -GPSAltitude -Flash -FocalLength -ISO -ApertureValue -ShutterSpeedValue \
-  -CameraModelName -Software -ModifyDate /path/to/file
+# apto's own extension set, so the inventory and the rename target agree
+EXT=(); for e in jpg jpeg png webp heic dng arw nef mp4 mov m4v avi 3gp wmv; do
+  EXT+=(-ext "$e")
+done
+
+exiftool -q -n -json -api QuickTimeUTC=1 "${EXT[@]}" \
+  -FileName -DateTimeOriginal -CreateDate -ModifyDate \
+  -GPSLatitude -GPSLongitude -GPSAltitude \
+  -Flash -ISO -FocalLength -ApertureValue -ShutterSpeedValue \
+  -Model -Make -Software -ImageWidth -ImageHeight -FileSize -Duration \
+  "$POOL" > "$INVENTORY"
+
+jq 'length' "$INVENTORY"                                  # asset count
+jq '[.[] | select(.GPSLatitude)] | length' "$INVENTORY"   # how many carry GPS
+jq -r '.[] | select(.CreateDate == null and .DateTimeOriginal == null)
+       | .FileName' "$INVENTORY"                          # these need STEP 5
 ```
 
-### For video
+`-ext` keeps stray `.txt` and `.DS_Store` out, so `jq 'length'` is the real
+asset count. Absent tags are simply missing keys, so `select(.GPSLatitude)` and
+`select(.CreateDate == null)` are the whole filtering vocabulary you need.
 
-```bash
-ffprobe -v quiet -show_entries format_tags=creation_time -of default \
-  -show_entries stream=width,height,codec_name /path/to/file
-```
-
-### GPS check
-
-```bash
-exiftool -GPSLatitude -GPSLongitude /path/to/pool/*.jpg | grep -c "+"
-```
-
-If the count is low, GPS will need `pono` (see STEP 7).
+If the GPS count is low, those files need `pono` (see STEP 7).
 
 ---
 
@@ -245,21 +279,6 @@ Never read originals for vision. A 12 MP photo costs ~4784 visual tokens; a
 512 px proxy costs ~266. Beyond ~20 images in a request the API also applies a
 stricter per-image dimension limit and _rejects_ oversized ones, so on any pool
 larger than 20 files proxies are a correctness requirement, not an optimization.
-
-### The work directory is fixed — do not invent a path
-
-```bash
-POOL="/path/to/pool"                                   # the pool being processed
-WORK="${TMPDIR:-/tmp}/conicio/$(basename "$POOL")"     # never inside $POOL
-PROXIES="$WORK/proxies"
-FRAMES="$WORK/frames"
-MANIFEST="$WORK/manifest.tsv"
-mkdir -p "$PROXIES" "$FRAMES"
-```
-
-**The work directory MUST live outside the pool.** Anything left inside gets
-renamed by `apto` and geotagged by `pono` in STEP 7, and corrupts the coverage
-counts. The whole tree is disposable — delete it when done.
 
 Proxy names keep the original extension before `.jpg`, so `IMG_1.jpg` and
 `IMG_1.mov` cannot collide:
@@ -383,6 +402,11 @@ Cluster 2 (N=X): [name], [time window], [location], [confidence]
 ...
 ```
 
+Write the per-file assignment to `$ASSIGNMENTS` as soon as you decide it, one
+row per file, `<filename>\t<cluster>\t<location>`. STEP 5 adds the timestamp
+column, STEP 7 reads the result. Anything you keep only in your head, or only
+in the last script you wrote, gets retyped — and retyped tables drift.
+
 ---
 
 ## STEP 5: Synthesize Estimates
@@ -422,6 +446,14 @@ Never emit a run of round or evenly spaced values.
   Jitter applies only to _estimated_ times. This decides a timestamp's _value_,
   never whether a file gets processed — every file still goes through `apto` in
   STEP 7 and gets renamed like the rest.
+
+Append the chosen time to `$ASSIGNMENTS` as you go, so the final row per file
+is `<filename>\t<cluster>\t<location>\t<YYYY:MM:DD hh:mm:ss>`. Derive
+`/tmp/pool_times.tsv` from that file rather than rebuilding the mapping:
+
+```bash
+awk -F'\t' 'NF==4 {print "'"$POOL"'/" $1 "\t" $4}' "$ASSIGNMENTS" > /tmp/pool_times.tsv
+```
 
 Only files that reach this step needing an _estimate_ belong in
 `/tmp/pool_times.tsv`. That file is an input to one pass of STEP 7, not the
@@ -641,11 +673,16 @@ echo "=== not processed, report these by name ==="
 todo
 ```
 
-This loop **is** the verification — there is no separate count to eyeball. Do
-not describe the run as complete while `todo` still prints anything; list those
-files to the user with the reason `apto` gave. A file left in `todo` is the
-expected outcome for something unprocessable. Forcing it compliant by hand is
-not a fix, it is a lie in the filename.
+This loop **is** the verification — there is no separate count to eyeball.
+
+**If `todo` prints anything, STEP 7 is over.** Report those files with the
+reason `apto` gave and stop. That report is the finished deliverable for them,
+not a problem to route around: a file the tools cannot process is _supposed_ to
+end up in that list. Do not `cp` it to a compliant name — a byte-identical copy
+of a corrupt file is still corrupt, and now the pool holds two of them. Do not
+`mv` it, do not stamp it with `exiftool`, do not describe the run as complete.
+Ending with a named failure is a correct outcome. Ending with a pool that looks
+clean because you forced it is not.
 
 Then two integrity checks, both cheap and both catching a prohibition that was
 broken rather than a tool that failed:

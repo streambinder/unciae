@@ -48,6 +48,11 @@ jobs:
           # under hyphenated tool dirs as separate modules.
           VALIDATE_PYTHON_MYPY: false
           VALIDATE_GO: false
+          # Biome already lints TypeScript here, and super-linter itself warns the
+          # two conflict. ESLint additionally resolves imports, which fails on the
+          # pi extensions: their imports come from pi's own runtime, so there is no
+          # package.json to resolve them against and never will be.
+          VALIDATE_TYPESCRIPT_ES: false
           # IGNORE_GITIGNORED_FILES dropped: super-linter 8.7.0 appends an
           # unsupported --gitignore flag to the jscpd/cpd binary when it's set,
           # crashing JSCPD. Removing it keeps copy-paste detection working.

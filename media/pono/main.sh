@@ -70,7 +70,10 @@ if [ "${ADDRESS:0:1}" = "@" ]; then
 	coords="${ADDRESS/@/}"
 	latitude="$(awk -F',' '{print $1}' <<<"${coords}" | xargs)"
 	longitude="$(awk -F',' '{print $2}' <<<"${coords}" | xargs)"
-	name="$(curl -s "https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}" | jq -r '.display_name')"
+	name=""
+	if [ "${DRY_RUN}" = 1 ]; then
+		name="$(curl -s "https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}" | jq -r '.display_name')"
+	fi
 else
 	echo "Fetching coordinates for ${ADDRESS}..."
 	address_encoded="$(jq -rn --arg address "${ADDRESS}" '$address|@uri')"
@@ -89,7 +92,11 @@ else
 	longitude="$(jq -r '.[0].lon' <<<"${osm_data}")"
 fi
 
-echo "Found ${name}: lat ${latitude}, lon ${longitude}"
+if [ -n "${name}" ]; then
+	echo "Found ${name}: lat ${latitude}, lon ${longitude}"
+else
+	echo "Using coordinates: lat ${latitude}, lon ${longitude}"
+fi
 
 [ "${DRY_RUN}" = 1 ] && exit 0
 

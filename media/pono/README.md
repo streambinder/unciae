@@ -1,6 +1,6 @@
 # Pono
 
-This script inflates media files with GPS coordinates and altitude for a given place.
+This script inflates media files with GPS coordinates for a given place.
 
 ## How to use
 

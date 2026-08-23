@@ -89,12 +89,7 @@ else
 	longitude="$(jq -r '.[0].lon' <<<"${osm_data}")"
 fi
 
-altitude="$(curl -sf "https://api.open-meteo.com/v1/elevation?latitude=${latitude}&longitude=${longitude}" | jq -r '.elevation[0]')"
-if [ -z "${altitude}" ] || [ "${altitude}" = "null" ]; then
-	echo "Failed to fetch altitude."
-	exit 1
-fi
-echo "Found ${name}: lat ${latitude}, lon ${longitude}, alt ${altitude}"
+echo "Found ${name}: lat ${latitude}, lon ${longitude}"
 
 [ "${DRY_RUN}" = 1 ] && exit 0
 
@@ -110,7 +105,6 @@ while read -r fname <&3; do
 	# perform the changes
 	exiftool -overwrite_original -m -wm cg \
 		-GPSPosition="${latitude} ${longitude}" \
-		-GPSAltitude="${altitude}" \
 		"${fname}" &&
 		touch -c -a -m -t "${timestamp}" "${fname}"
 

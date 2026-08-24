@@ -27,7 +27,7 @@ Run the commands here as they are written. They are not sketches.
 2. Nothing under `$POOL` is ever deleted, moved, renamed or copied by you. Every
    `rm` you write spells out a path under `$WORK/` literally. Never hand `rm` a
    variable that has, anywhere in its life, held the path of a source file.
-3. Images are looked at only through `describe_images`, only as proxies. Never
+3. Images are looked at only through `view`, only as proxies. Never
    `read` an image: it makes every later request multimodal and uncacheable.
 4. Read metadata once into `$INVENTORY`. Append every decision to `$ASSIGNMENTS`
    when you make it. Never retype a table you have already written.
@@ -36,7 +36,7 @@ Run the commands here as they are written. They are not sketches.
    with no EXIF time has no trustworthy metadata; place it by vision alone.
 6. Every asset goes through `apto` and ends up named `YYYYMMDD-HHMMSS.ext` —
    including the ones with no EXIF, a wrong date or an odd filename. Those are
-   the whole point: look at them with `describe_images` and stamp them with
+   the whole point: look at them with `view` and stamp them with
    `-t`. The only acceptable leftover is a file a tool physically refused.
 7. Everything is best effort, and **one `apto` command per asset**. If it
    fails, you are done with that asset: append it to `$FAILED` and move to the
@@ -176,7 +176,7 @@ proxy is read sideways. Frame offsets are percentages of real duration — a fix
 
 ### 1.4 Vision
 
-`describe_images` is the only way you look at anything. Batch a whole cluster
+`view` is the only way you look at anything. Batch a whole cluster
 per call; pass the frames of one video together and treat them as one asset.
 
 Take paths from `$WORK/proxy_list.txt` and `$FRAMES`, never from a bare listing
@@ -188,7 +188,7 @@ find "$FRAMES" -type f | sort       # video frames, three per clip
 ```
 
 ```text
-describe_images(paths: ["$PROXIES/IMG_1.jpg.jpg", "$PROXIES/IMG_2.dng.jpg", ...])
+view(paths: ["$PROXIES/IMG_1.jpg.jpg", "$PROXIES/IMG_2.dng.jpg", ...])
 ```
 
 Ask about time of day: shadow direction and length, sky colour, light quality
@@ -269,7 +269,7 @@ span. Those stamps must look like a camera made them:
 
 No EXIF time, an out-of-bounds date, an unknown filename, a messaging-app
 export: none of these are reasons to leave an asset alone. They are the reason
-this skill exists. Each one gets looked at with `describe_images` and given an
+this skill exists. Each one gets looked at with `view` and given an
 explicit stamp from what it shows. The only asset that may end up unplaced is
 one the tools physically cannot write.
 

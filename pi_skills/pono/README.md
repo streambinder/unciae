@@ -27,7 +27,7 @@ Run the commands here as they are written. They are not sketches.
 2. Nothing under `$POOL` is ever deleted, moved, renamed or copied by you. Every
    `rm` you write spells out a path under `$WORK/` literally. Never hand `rm` a
    variable that has, anywhere in its life, held the path of a source file.
-3. Images are looked at only through `describe_images`, only as proxies. Never
+3. Images are looked at only through `view`, only as proxies. Never
    `read` an image: it makes every later request multimodal and uncacheable.
 4. Read metadata once into `$INVENTORY`. Append every decision to `$ASSIGNMENTS`
    when you make it. Never retype a table you have already written.
@@ -190,7 +190,7 @@ sees EXIF, so an unrotated proxy is read sideways.
 
 ### 1.5 Vision
 
-`describe_images` is the only way you look at anything. Batch per venue
+`view` is the only way you look at anything. Batch per venue
 hypothesis; pass the frames of one video together and treat them as one asset.
 
 ```bash
@@ -199,7 +199,7 @@ find "$FRAMES" -type f | sort       # video frames, three per clip
 ```
 
 ```text
-describe_images(paths: ["$PROXIES/IMG_1.jpg.jpg", "$PROXIES/IMG_2.dng.jpg", ...])
+view(paths: ["$PROXIES/IMG_1.jpg.jpg", "$PROXIES/IMG_2.dng.jpg", ...])
 ```
 
 Ask about place, not time: indoor or outdoor, the kind of room or grounds,

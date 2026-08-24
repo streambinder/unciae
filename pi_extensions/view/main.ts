@@ -7,14 +7,14 @@
  * poisons every later turn of that session, while the same image analysed in a
  * throwaway ~250-token context costs 0.7 s.
  *
- * describe_images runs each file through a one-shot model call with no history and
+ * view runs each file through a one-shot model call with no history and
  * no tools, and hands back text.
  *
  * This extension only ADDS a tool -- it never blocks or rewrites anything, so it is
  * inert in sessions that do not call it. Keeping images out of a context is the
  * caller's job: `pi -xt read` removes the tool route, and pi's own
  * `images.blockImages` setting covers the rest (`@file` attachments and any other
- * tool returning an image). Neither affects describe_images, which calls the provider
+ * tool returning an image). Neither affects view, which calls the provider
  * directly rather than through the agent's context conversion.
  */
 
@@ -83,8 +83,8 @@ const textOf = (message: AssistantMessage): string =>
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
-    name: "describe_images",
-    label: "Describe images",
+    name: "view",
+    label: "View",
     description: [
       "Analyse image files in a throwaway context and return text descriptions.",
       "The images never enter this conversation, so this context stays cacheable.",
@@ -92,8 +92,8 @@ export default function (pi: ExtensionAPI) {
     ].join(" "),
     promptSnippet: "Analyse images out-of-context and return text descriptions",
     promptGuidelines: [
-      "Use describe_images rather than read for every image: reading an image into the conversation makes every later request uncacheable.",
-      "Batch every image you need into one describe_images call rather than one call per file.",
+      "Use view rather than read for every image: reading an image into the conversation makes every later request uncacheable.",
+      "Batch every image you need into one view call rather than one call per file.",
     ],
     parameters: Type.Object({
       paths: Type.Array(Type.String(), {
@@ -110,10 +110,10 @@ export default function (pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const model = ctx.model;
-      if (!model) throw new Error("describe_images: no active model");
+      if (!model) throw new Error("view: no active model");
       if (!model.input.includes("image"))
         throw new Error(
-          `describe_images: ${model.provider}/${model.id} is not a vision model`,
+          `view: ${model.provider}/${model.id} is not a vision model`,
         );
 
       const question = params.question?.trim() || DEFAULT_QUESTION;

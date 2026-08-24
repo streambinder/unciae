@@ -76,47 +76,54 @@ fi
 
 # effective script
 
+# ffmpeg cannot edit in place, so encoded video lands here first. one scratch dir for the
+# whole run, trapped: the old fixed /tmp/<basename> collided between concurrent runs and
+# was trivially pre-planted by anyone else with write access to /tmp
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "${SCRATCH}"' EXIT
+
 exts="${EXTS[*]}"
 exts="${exts// /|}"
 while read -r fname <&3; do
 	basename="$(basename "${fname}")"
 	echo "Processing ${basename}..."
 
-	# dry-run check
+	# build the invocation as an argv array. the previous string-and-eval form handed the
+	# filename back to the parser as shell source, so a name carrying a paren aborted the
+	# run outright and one carrying ; or $() executed as code
+	encoded=""
 	if [ "${ENCODE}" = 1 ]; then
 		# gather media file type
 		mime_type=$(file --mime-type -b "${fname}")
 		if [[ "${mime_type}" == image/* ]]; then
 			if [[ "${OP}" =~ ^[0-9]+$ ]]; then
-				mogrify_op="-rotate ${OP}"
+				rotator=(mogrify -rotate "${OP}" "${fname}")
 			else
-				mogrify_op="${OP}"
+				# dashed: mogrify reads a bare "flip" as a filename and dies on the decode
+				rotator=(mogrify "-${OP}" "${fname}")
 			fi
-			rotator="mogrify ${mogrify_op} ${fname}"
 		elif [[ "${mime_type}" == video/* ]] || [[ "${mime_type}" == */octet-stream ]]; then
-			if [[ "${OP}" == "90" ]]; then
-				ffmpeg_op="-vf 'transpose=1'"
-			elif [[ "${OP}" == "180" ]]; then
-				ffmpeg_op="-vf 'transpose=2,transpose=2'"
-			elif [[ "${OP}" == "270" ]]; then
-				ffmpeg_op="-vf 'transpose=2'"
-			elif [[ "${OP}" == "flip" ]]; then
-				ffmpeg_op="-vf vflip"
-			else
-				ffmpeg_op="-vf hflip"
-			fi
-			rotator="ffmpeg -i ${fname} ${ffmpeg_op} /tmp/${basename} && mv -vf /tmp/${basename} ${fname}"
+			case "${OP}" in
+			90) filter="transpose=1" ;;
+			180) filter="transpose=2,transpose=2" ;;
+			270) filter="transpose=2" ;;
+			flip) filter="vflip" ;;
+			*) filter="hflip" ;;
+			esac
+			encoded="${SCRATCH}/${basename}"
+			rotator=(ffmpeg -i "${fname}" -vf "${filter}" "${encoded}")
 		else
 			echo "${fname} has unknown type: skipping"
 			continue
 		fi
 	else
-		rotator="exiftool -rotation=${OP} -overwrite_original -m ${fname}"
+		rotator=(exiftool "-rotation=${OP}" -overwrite_original -m "${fname}")
 	fi
 
-	# dry-run check
+	# dry-run check. %q so a name holding spaces or parens is shown the way it would have
+	# to be typed, rather than as something that looks copy-pasteable and is not
 	if [ "${DRY_RUN}" = 1 ]; then
-		echo "Command: ${rotator}"
+		echo "Command: $(printf '%q ' "${rotator[@]}")"
 		continue
 	fi
 
@@ -124,7 +131,8 @@ while read -r fname <&3; do
 	timestamp="$(date -r "${fname}" "+%Y%m%d%H%M.%S")"
 
 	# perform the changes
-	eval "${rotator}" &&
+	"${rotator[@]}" &&
+		{ [ -z "${encoded}" ] || mv -vf "${encoded}" "${fname}"; } &&
 		touch -c -a -m -t "${timestamp}" "${fname}"
 
 	# run hook

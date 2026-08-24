@@ -18,11 +18,12 @@ Run the commands here as they are written. They are not sketches.
 
 ## Rules
 
-1. `exiftool` **reads only**. `pono` writes GPS. `magick`/`ffmpeg` build
-   proxies. Nothing else touches the pool. In particular `exiftool -Tag=…` and
-   `exiftool -all=` are never run on an asset: the second erases every tag the
-   file has, and neither passes `-overwrite_original`, so both litter the pool
-   with `<name>_original` backups.
+1. `exiftool` **reads only**. `pono` writes GPS. `tundo` repairs an asset `pono`
+   could not write at all. `magick`/`ffmpeg` build proxies. Nothing else touches
+   the pool. In particular you never run `exiftool -Tag=…` or `exiftool -all=`
+   on an asset by hand: the second erases every tag the file has, and neither
+   passes `-overwrite_original`, so both litter the pool with `<name>_original`
+   backups. Rebuilding a damaged metadata block is `tundo`'s job, not yours.
 2. Nothing under `$POOL` is ever deleted, moved, renamed or copied by you. Every
    `rm` you write spells out a path under `$WORK/` literally. Never hand `rm` a
    variable that has, anywhere in its life, held the path of a source file.
@@ -40,6 +41,11 @@ Run the commands here as they are written. They are not sketches.
    fails, you are done with those assets: append the venue to `$FAILED` and
    move on. Do not retry it, do not fall back to per-file calls, do not reach
    for `exiftool`. A named failure is a finished result.
+8. The **only** exception to 7 is the repair pass in 3.2, and it is bounded: one
+   `tundo` over the assets a venue is still missing, then one final `pono` for
+   that venue. By then those files' metadata blocks have been rebuilt, so the
+   last call is aimed at different files, not a retry of the same ones. A venue
+   still short afterwards is finished — it stays in `$FAILED`.
 
 ## Setup
 
@@ -303,7 +309,59 @@ it was handed was missing, so a silent no-op over 200 files looks exactly like
 success. Only the address form touches the network — a `jq: parse error` there
 means Nominatim is rate-limiting, so record it and move on.
 
-### 3.2 Report
+### 3.2 Repair — what a short count actually means
+
+A venue that wrote fewer files than it wanted has usually **not** skipped one and
+carried on. `pono` stops at the first asset it cannot write and never reaches the
+remaining paths in that call, so everything after the damaged file is still
+untagged. One bad asset early in a venue's list can cost you the whole venue.
+
+The cause is a metadata block exiftool refuses to rewrite, the same one that
+stops `apto`:
+
+```text
+Error: Error reading OtherImageStart data in IFD0 - <path>
+```
+
+`-m` does not cover it — that error is fatal, not minor. `tundo` rebuilds the
+block off the file's own tags, which drops the dangling pointer.
+
+```bash
+withgps() { exiftool -q -n -T -GPSLatitude "$POOL" 2>/dev/null | grep -cv '^-$'; }
+
+while IFS=$'\t' read -r VENUE LAT LON; do
+  [ -z "$VENUE" ] && continue
+
+  # what this venue is still missing, re-read from the files rather than assumed from
+  # 3.1's counts: which paths a stopped call had already reached is not knowable
+  : > "$WORK/still.txt"
+  while IFS= read -r p; do
+    [ "$(exiftool -q -n -T -GPSLatitude "$p" 2>/dev/null)" = "-" ] &&
+      echo "$p" >> "$WORK/still.txt"
+  done < <(awk -F'\t' -v v="$VENUE" -v d="$POOL" \
+    '$2==v && $3=="no" {print d "/" $1}' "$ASSIGNMENTS")
+  [ -s "$WORK/still.txt" ] || continue
+
+  # tundo probes before touching anything, so the assets that were merely queued behind
+  # the damaged one come back "already writable" and are passed through untouched
+  tr '\n' '\0' < "$WORK/still.txt" | xargs -0 tundo || true
+  before=$(withgps)
+  tr '\n' '\0' < "$WORK/still.txt" | xargs -0 pono -a "@$LAT,$LON"
+  written=$(( $(withgps) - before ))
+  echo "$VENUE: was missing $(wc -l < "$WORK/still.txt" | tr -d ' '), written $written"
+  [ "$written" -gt 0 ] || echo "pono still wrote nothing for $VENUE" >> "$FAILED"
+done < "$VENUES"
+```
+
+This pass runs **once**. A venue still short afterwards is a finished result — do
+not reach for `tundo --force`, and do not go round again.
+
+`tundo`'s rebuild is lossy on files that did not need it: the embedded thumbnail,
+the MPF secondary images and any vendor HDR gain map do not survive the
+copy-back. That is why it is pointed only at the assets a venue is still missing,
+and why you never run it across `$POOL` as a precaution.
+
+### 3.3 Report
 
 ```bash
 total=$(find "$POOL" -maxdepth 1 -type f -not -name '.*' ! -name '*_original' | wc -l | tr -d ' ')
@@ -320,6 +378,8 @@ positions than that means a run wrote coordinates it derived instead of the
 user's — find them and rewrite.
 
 Every asset without GPS at the end must appear in `$FAILED`, and only because
-`pono` refused it. "No GPS in the original" is not a reason — that is the input,
-not an outcome. Give the user the counts and every line of `$FAILED`, named.
-Then `rm -rf "$WORK"`.
+`pono` refused it after 3.2 had its one attempt at repairing it. "No GPS in the
+original" is not a reason — that is the input, not an outcome. "Damaged
+metadata" is not one either: 3.2 is where that gets settled, and a run that
+reports it without having run `tundo` skipped a step. Give the user the counts
+and every line of `$FAILED`, named. Then `rm -rf "$WORK"`.

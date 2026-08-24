@@ -19,10 +19,11 @@ Run the commands here as they are written. They are not sketches.
 
 ## Rules
 
-1. `exiftool` **reads only**. `apto` writes time and renames. `magick`/`ffmpeg`
-   build proxies. Nothing else touches the pool. In particular
-   `exiftool -Tag=…` and `exiftool -all=` are never run on an asset: the second
-   erases every tag the file has.
+1. `exiftool` **reads only**. `apto` writes time and renames. `tundo` repairs an
+   asset `apto` could not write at all. `magick`/`ffmpeg` build proxies. Nothing
+   else touches the pool. In particular you never run `exiftool -Tag=…` or
+   `exiftool -all=` on an asset by hand: the second erases every tag the file
+   has. Rebuilding a damaged metadata block is `tundo`'s job, not yours.
 2. Nothing under `$POOL` is ever deleted, moved, renamed or copied by you. Every
    `rm` you write spells out a path under `$WORK/` literally. Never hand `rm` a
    variable that has, anywhere in its life, held the path of a source file.
@@ -43,6 +44,11 @@ Run the commands here as they are written. They are not sketches.
    another tool, and above all do not `mv` it into a compliant-looking name.
    A file `apto` did not rename is **not compliant**, however tidy its name
    looks, and reporting it as such is worse than reporting the failure.
+8. The **only** exception to 7 is the repair pass in 3.2, and it is bounded: one
+   `tundo`, then one final `apto`, for assets that failed because exiftool
+   refused to write them. By then the file's metadata block has been rebuilt, so
+   that last call is aimed at a different file, not a retry of the same one. An
+   asset that fails again is finished — it stays in `$FAILED`.
 
 ## Setup
 
@@ -324,7 +330,62 @@ One invocation per file, deliberately: handed a directory, `apto` aborts at the
 first corrupt asset and never reaches the rest. `-t` takes `YYYYMMDDHHmmss` and
 strips punctuation, so `20260717180733` is fine.
 
-### 3.2 Report
+### 3.2 Repair — the one thing that earns a second `apto` call
+
+Some assets fail for a reason that has nothing to do with the time you chose:
+their EXIF structure is damaged badly enough that exiftool will not rewrite the
+file at all, so `apto` never reaches the rename. The signature is a write error,
+most often
+
+```text
+Error: Error reading OtherImageStart data in IFD0 - <path>
+```
+
+IFD0 advertises preview data exiftool cannot read. `-m` does **not** cover it —
+that error is fatal, not minor — so the `apto` call was fine and repeating it
+unchanged fails identically. `tundo` rebuilds the metadata block off the file's
+own tags, which drops the dangling pointer and makes the asset writable.
+
+```bash
+sed -n 's/^apto -[et] failed: //p' "$FAILED" | sort -u > "$WORK/broken.txt"
+: > "$WORK/repaired.txt"
+
+while IFS= read -r fname; do
+  # tundo probes with a throwaway write before touching anything, so an asset that
+  # failed for some other reason comes back "already writable" and is left alone
+  tundo "$POOL/$fname" || { echo "tundo could not repair: $fname"; continue; }
+  # replay the decision column 3 already carries — never re-derive it here
+  stamp="$(awk -F'\t' -v f="$fname" '$1==f {print $3}' "$ASSIGNMENTS")"
+  if [ "$stamp" = "-" ]; then
+    apto --tz "$TZ" --skip-compliant --skip-failures -e "$POOL/$fname"
+  else
+    apto --tz "$TZ" -t "$stamp" "$POOL/$fname"
+  fi && echo "$fname" >> "$WORK/repaired.txt"
+done < "$WORK/broken.txt"
+
+# drop the recovered ones from $FAILED and count them as renamed, or 3.3's
+# "renamed + failed == assets" invariant reports them twice. matching on the exact
+# name, not grep -F: one filename can be a substring of another. keyed on FILENAME
+# rather than the usual NR==FNR, which silently swallows the whole of $FAILED when
+# nothing was repaired — an empty first file never advances FNR
+awk -v keep="$WORK/repaired.txt" '
+  FILENAME==keep {ok[$0]; next}
+  {n=$0; sub(/^apto -[et] failed: /,"",n); if (!(n in ok)) print}' \
+  "$WORK/repaired.txt" "$FAILED" > "$WORK/f.tmp" && mv "$WORK/f.tmp" "$FAILED"
+cat "$WORK/repaired.txt" >> "$WORK/renamed.txt"
+
+echo "repaired $(wc -l < "$WORK/repaired.txt" | tr -d ' ') | still failing $(wc -l < "$FAILED" | tr -d ' ')"
+```
+
+This pass runs **once**. Whatever is still in `$FAILED` afterwards is a finished
+result — do not reach for `tundo --force`, and do not go round again.
+
+`tundo`'s rebuild is lossy on files that did not need it: the embedded thumbnail,
+the MPF secondary images and any vendor HDR gain map do not survive the
+copy-back. That is why it is pointed only at the names `apto` already refused,
+and why you never run it across `$POOL` as a precaution.
+
+### 3.3 Report
 
 ```bash
 COMPLIANT='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].*'
@@ -345,10 +406,13 @@ cat "$FAILED"
 ```
 
 **Every non-compliant file must appear in `$FAILED`, and only because a tool
-refused to write it.** "Out of bounds", "no valid timestamp", "unknown origin"
-and "WhatsApp export" are not outcomes — an asset in any of those states should
-have been placed by vision in Phase 2, and a run that ends with them unrenamed
-has not done its job. Go back and place them.
+refused to write it after 3.2 had its one attempt at repairing it.** "Out of
+bounds", "no valid timestamp", "unknown origin" and "WhatsApp export" are not
+outcomes — an asset in any of those states should have been placed by vision in
+Phase 2, and a run that ends with them unrenamed has not done its job. Go back
+and place them. "Damaged metadata" is not an outcome either: 3.2 is where that
+gets settled, and a run that reports it without having run `tundo` skipped a
+step.
 
 Give the user the counts and every line of `$FAILED`, named. Two invariants:
 **`renamed + failed` must equal `assets`**, and **`compliant` must never exceed

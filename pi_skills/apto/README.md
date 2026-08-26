@@ -38,6 +38,9 @@ Run the commands here as they are written. They are not sketches.
    including the ones with no EXIF, a wrong date or an odd filename. Those are
    the whole point: look at them with `view` and stamp them with
    `-t`. The only acceptable leftover is a file a tool physically refused.
+   One carve-out: an asset whose filename already matches its own EXIF capture
+   time is detected as compliant in 1.2 and never handed to `apto` at all —
+   left untouched, it anchors the pool.
 7. Everything is best effort, and **one `apto` command per asset**. If it
    fails, you are done with that asset: append it to `$FAILED` and move to the
    next one. Do not retry it, do not try the other mode, do not reach for
@@ -117,6 +120,31 @@ wc -l < "$ASSIGNMENTS"
 Every asset has a row from the start, so the gate can never fail on a missing
 one, and **you never type a filename** — the 31-character camera names are
 retyped wrong every single time anyone tries.
+
+Now find the assets that are already fully compliant — filename equal to their
+own EXIF capture time — and park them as anchors. They skip clustering,
+stamping and `apto` entirely; left byte-identical, they pin their slot and the
+rest of the pool is sequenced around them.
+
+```bash
+: > "$WORK/anchors.txt"
+jq -r '.[] | "\(.FileName)\t\((.CreateDate // .DateTimeOriginal) // "")"' \
+  "$INVENTORY" | while IFS=$'\t' read -r fname exif; do
+  [ -n "$exif" ] || continue
+  stem="${fname%.*}"
+  case "$stem" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+    *) continue ;;
+  esac
+  # digits-only comparison: the name carries the same wall-clock time the
+  # EXIF does. `.jpeg` vs `.jpg` does not matter — the rename below never
+  # touches anchors, so their extension stays as it is
+  [ "$(echo "$exif" | tr -cd '0-9' | cut -c1-14)" = "${stem//-/}" ] \
+    && echo "$fname" >> "$WORK/anchors.txt"
+done
+
+echo "anchors $(wc -l < "$WORK/anchors.txt" | tr -d ' ')"
+```
 
 ### 1.3 Proxies (run as-is)
 
@@ -206,7 +234,12 @@ Build one timeline and put every asset on it.
 ### 2.1 What you can trust
 
 - EXIF time is an anchor. Use it as given.
-- Filename and filesystem timestamps are **not** anchors, ever.
+- Filenames are never a source of time — except for the compliant assets 1.2
+  already identified: filename digits equal to their own EXIF capture time.
+  Those are the pool's anchors: placed with cluster `anchor`, never clustered
+  with anything else, never stamped, never handed to `apto`. Everything else
+  is sequenced around them.
+- Filesystem timestamps are **not** anchors, ever.
 - An asset with no EXIF time is bogus metadata-wise. Its position comes from
   vision plus the cluster it visually belongs to, and nothing else.
 - **Boundaries win, and pulling strays inside them is the job.** If the user
@@ -249,6 +282,18 @@ setrow "IMG_1234.jpg" dinner   20260717203311   # changed your mind, same call
 The columns are `<filename>` `<cluster>` `<YYYYMMDDHHmmss or "-">`. Rows keep
 their order and stay unique, so there is never anything to dedupe and never a
 reason to reach for `sed -i` or a rewrite of the whole table.
+
+Place the anchors first, straight from the list 1.2 built:
+
+```bash
+while IFS= read -r fname; do
+  setrow "$fname" anchor -
+done < "$WORK/anchors.txt"
+```
+
+`anchor` is a literal marker, not one of the phases of the day — those rows
+need no cluster work and the `-` confirms their own EXIF is the truth. Every
+other asset is reviewed as before.
 
 To set a whole cluster at once, drive `setrow` from a list of filenames you
 already have — copied from `comm`/`jq` output, never retyped.
@@ -305,8 +350,13 @@ writes it. **This is the first and only point in the run where a filename
 changes**, which is why every list built before now is still valid.
 
 ```bash
-awk -F'\t' 'NF>=3 && $1 !~ /^#/ {print $1 "\t" $3}' "$ASSIGNMENTS" \
-| while IFS=$'\t' read -r fname stamp; do
+: > "$WORK/anchored.txt"
+awk -F'\t' 'NF>=3 && $1 !~ /^#/ {print $1 "\t" $2 "\t" $3}' "$ASSIGNMENTS" \
+| while IFS=$'\t' read -r fname cluster stamp; do
+    if [ "$cluster" = "anchor" ]; then
+      echo "$fname" >> "$WORK/anchored.txt"
+      continue
+    fi
     if [ "$stamp" = "-" ]; then
       if apto --tz "$TZ" --skip-compliant --skip-failures -e "$POOL/$fname"; then
         echo "$fname" >> "$WORK/renamed.txt"
@@ -323,8 +373,8 @@ awk -F'\t' 'NF>=3 && $1 !~ /^#/ {print $1 "\t" $3}' "$ASSIGNMENTS" \
   done
 ```
 
-Every asset ends up in exactly one of `$WORK/renamed.txt` or `$FAILED`. Nothing
-else may touch a file in `$POOL` after this point.
+Every asset ends up in exactly one of `$WORK/renamed.txt`, `$WORK/anchored.txt`
+or `$FAILED`. Nothing else may touch a file in `$POOL` after this point.
 
 One invocation per file, deliberately: handed a directory, `apto` aborts at the
 first corrupt asset and never reaches the rest. `-t` takes `YYYYMMDDHHmmss` and
@@ -391,13 +441,14 @@ and why you never run it across `$POOL` as a precaution.
 COMPLIANT='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].*'
 assets=$(find "$POOL" -maxdepth 1 -type f -not -name '.*' ! -name '*_original' | wc -l | tr -d ' ')
 ok=$(sort -u "$WORK/renamed.txt" 2>/dev/null | wc -l | tr -d ' ')
+anchored=$(wc -l < "$WORK/anchored.txt" | tr -d ' ')
 bad=$(wc -l < "$FAILED" | tr -d ' ')
 compliant=$(find "$POOL" -maxdepth 1 -type f -name "$COMPLIANT" | wc -l | tr -d ' ')
-echo "assets $assets | apto renamed $ok | apto failed $bad | compliant $compliant"
-[ $((ok + bad)) -eq "$assets" ] \
+echo "assets $assets | apto renamed $ok | apto anchored $anchored | apto failed $bad | compliant $compliant"
+[ $((ok + bad + anchored)) -eq "$assets" ] \
   || echo "MISMATCH: an asset was never attempted"
-[ "$compliant" -le "$ok" ] \
-  || echo "MISMATCH: more compliant files than apto renamed — something renamed a file behind apto's back"
+[ "$compliant" -le $((ok + anchored)) ] \
+  || echo "MISMATCH: more compliant files than renamed plus anchored — something renamed a file behind apto's back"
 find "$POOL" -maxdepth 1 -type f -not -name '.*' ! -name "$COMPLIANT"
 find "$POOL" -maxdepth 1 -name '*_original'     # must be empty: a tool was bypassed
 find "$POOL" -maxdepth 1 -type f -name "$COMPLIANT" | sed 's|.*/||; s/-.*//' \
@@ -415,7 +466,7 @@ gets settled, and a run that reports it without having run `tundo` skipped a
 step.
 
 Give the user the counts and every line of `$FAILED`, named. Two invariants:
-**`renamed + failed` must equal `assets`**, and **`compliant` must never exceed
-`renamed`** — a compliant name that `apto` did not produce means something
-renamed a file behind its back. Either way the run is not clean, whatever the
+**`renamed + anchored + failed` must equal `assets`**, and **`compliant` must
+never exceed `renamed + anchored`** — a compliant name that `apto` did not
+produce and 1.2 did not anchor means something renamed a file behind its back. Either way the run is not clean, whatever the
 compliant count says, and a hand-renamed file is never reported as compliant. Then `rm -rf "$WORK"`.

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "restup"
+version = "0.1.0"
+description = "Concurrent restic backup runner driven by YAML config"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "GPL-3.0-or-later" }
+dependencies = ["pyyaml"]
+
+[dependency-groups]
+dev = ["mypy", "types-PyYAML"]
+
+[tool.hatch.build.targets.wheel]
+packages = []
+force-include = { "main.py" = "restup/main.py" }
+
+[tool.mypy]
+strict = true
+files = ["main.py"]

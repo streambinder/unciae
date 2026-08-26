@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "renovo"
+version = "0.1.0"
+description = "Concurrent shell command runner with per-task colored output"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "GPL-3.0-or-later" }
+dependencies = [
+  "anchor",
+  "anyio",
+  "asyncclick",
+]
+
+[dependency-groups]
+dev = ["mypy", "ruff"]
+
+# anchor sourced from same monorepo via git ref — bump tag in lockstep with anchor.
+# local dev: gitignored uv.toml next to this pyproject overrides with a path source.
+[tool.uv.sources]
+anchor = { git = "https://github.com/streambinder/unciae.git", branch = "master", subdirectory = "tui/anchor" }
+
+[tool.hatch.build.targets.wheel]
+packages = []
+force-include = { "main.py" = "renovo/main.py" }
+
+[tool.mypy]
+strict = true
+files = ["main.py"]

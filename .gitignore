@@ -1,0 +1,10 @@
+venv
+.venv
+__pycache__
+.mypy_cache
+go.work.sum
+.DS_Store
+uv.toml
+.ruff_cache
+.pytest_cache
+ai/ianua/ianua

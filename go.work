@@ -1,0 +1,9 @@
+go 1.25.0
+
+toolchain go1.25.8
+
+use (
+	./ai/ianua
+	./audio/inflarics
+	./audio/pluffer
+)

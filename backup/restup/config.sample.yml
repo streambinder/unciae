@@ -1,0 +1,25 @@
+---
+tasks:
+  - repository: /var/restic/database
+    password: "REDACTED"
+    path: /var/databases
+    retention: 31d
+    prespawn: hooks/db_pre.sh
+    postspawn: hooks/db_post.sh
+  - repository: /var/restic/acl
+    password: "REDACTED"
+    path: /var/acls
+    retention: 2y5m7d3h
+    prespawn: hooks/acl_pre.sh
+    postspawn: hooks/acl_post.sh
+  - repository: /var/restic/firewall
+    password: "REDACTED"
+    path: /etc/sysconfig/iptables
+    retention: 2m
+    prespawn: hooks/fw_pre.sh
+  - repository: /var/restic/log
+    password: "REDACTED"
+    path: /var/log
+    retention: 2m15d
+    regexes:
+      - "*.gz"

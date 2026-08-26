@@ -1,0 +1,123 @@
+---
+name: push
+
+on: # yamllint disable-line rule:truthy
+  push: null
+  pull_request: null
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  attestations: none
+  checks: none
+  contents: read
+  deployments: none
+  id-token: none
+  issues: none
+  discussions: none
+  packages: read
+  pages: none
+  pull-requests: read
+  repository-projects: none
+  security-events: none
+  statuses: none
+
+jobs:
+  super-linter:
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: mv -vf .github/linters/biome.json .github/linters/commitlint.config.js ./
+      - uses: super-linter/super-linter/slim@4ce20838b8ab83717e78138c5b3a1407148e0918
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: ${{ !contains(github.event_name, 'pull_request') }}
+          VALIDATE_PYTHON_PYINK: false
+          VALIDATE_PYTHON_BLACK: false
+          VALIDATE_PYTHON_PYLINT: false
+          # PYTHON_MYPY deferred until phase-2 of the §21.7 migration; super-linter
+          # invokes mypy per-file which can't reconcile sibling main.py files
+          # under hyphenated tool dirs as separate modules.
+          VALIDATE_PYTHON_MYPY: false
+          VALIDATE_GO: false
+          # Biome already lints TypeScript here, and super-linter itself warns the
+          # two conflict. ESLint additionally resolves imports, which fails on the
+          # pi extensions: their imports come from pi's own runtime, so there is no
+          # package.json to resolve them against and never will be.
+          VALIDATE_TYPESCRIPT_ES: false
+          # IGNORE_GITIGNORED_FILES dropped: super-linter 8.7.0 appends an
+          # unsupported --gitignore flag to the jscpd/cpd binary when it's set,
+          # crashing JSCPD. Removing it keeps copy-paste detection working.
+          SAVE_SUPER_LINTER_OUTPUT: false
+          MULTI_STATUS: false
+          LOG_LEVEL: WARN
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: 0.11.12
+      - name: Run mypy --strict per Python project
+        run: |
+          set -euo pipefail
+          # discover every project except the .venv-shadowed roots; each pyproject
+          # owns its mypy scope via [tool.mypy] files = [...] so sibling main.py
+          # files in adjacent projects don't collide as duplicate modules
+          while IFS= read -r -d '' proj; do
+            dir="$(dirname "$proj")"
+            echo "::group::$dir"
+            # --frozen installs the lock without checking it matches pyproject
+            uv lock --check --project "$dir"
+            uv sync --frozen --project "$dir"
+            (cd "$dir" && uv run mypy --strict)
+            echo "::endgroup::"
+          done < <(find . -name pyproject.toml -not -path '*/.venv/*' -print0)
+  notify-clavis:
+    needs: [super-linter, mypy]
+    if: >-
+      success() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master'
+    environment: notify-clavis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697
+        with:
+          token: ${{ secrets.REPOSITORY_DISPATCH_CLAVIS }}
+          repository: streambinder/clavis
+          event-type: unciae-sync
+          client-payload: >-
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }
+  notify-imperium:
+    needs: [super-linter, mypy]
+    if: >-
+      success() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master'
+    environment: notify-imperium
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697
+        with:
+          token: ${{ secrets.REPOSITORY_DISPATCH_IMPERIUM }}
+          repository: streambinder/imperium
+          event-type: unciae-sync
+          client-payload: >-
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }

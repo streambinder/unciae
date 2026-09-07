@@ -146,7 +146,7 @@ Multi-image: add `scope=<name>`.
 ## 6. Dependabot
 
 Required `.github/dependabot.yml` for all ecosystems present. Weekly, grouped
-minor/patch.
+minor/patch. Enable Dependabot alerts on every repository.
 
 ## 7. Commits & PRs
 

@@ -87,13 +87,18 @@ export default function (pi: ExtensionAPI) {
     label: "View",
     description: [
       "Analyse image files in a throwaway context and return text descriptions.",
-      "The images never enter this conversation, so this context stays cacheable.",
+      "The images never enter this conversation, so a description costs a small",
+      "fraction of the image -- use this to sweep a pool too large to read.",
       "Files are processed one at a time; pass them all in a single call.",
     ].join(" "),
     promptSnippet: "Analyse images out-of-context and return text descriptions",
     promptGuidelines: [
-      "Use view rather than read for every image: reading an image into the conversation makes every later request uncacheable.",
+      "Sweep bulk images with view: a large batch of inline images will not" +
+        " fit in context, the same batch of descriptions will.",
       "Batch every image you need into one view call rather than one call per file.",
+      "When a single decision rides on detail a description may have dropped," +
+        " read that one image inline instead. The cost is context, so keep it" +
+        " to the few images whose detail actually decides something.",
     ],
     parameters: Type.Object({
       paths: Type.Array(Type.String(), {

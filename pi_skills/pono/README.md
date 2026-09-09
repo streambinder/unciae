@@ -27,10 +27,16 @@ Run the commands here as they are written. They are not sketches.
 2. Nothing under `$POOL` is ever deleted, moved, renamed or copied by you. Every
    `rm` you write spells out a path under `$WORK/` literally. Never hand `rm` a
    variable that has, anywhere in its life, held the path of a source file.
-3. Images are looked at only through `view`, only as proxies. Never
-   `read` an image: it makes every later request multimodal and uncacheable.
+3. Bulk vision goes through `view`, always as proxies: a description costs a
+   small fraction of what the image itself does, and a pool of any size does
+   not fit in context any other way. The exception is the assets still unplaced
+   at the 2.3 gate — `read` those directly, because there the venue rides on
+   detail a description may have dropped.
 4. Read metadata once into `$INVENTORY`. Append every decision to `$ASSIGNMENTS`
-   when you make it. Never retype a table you have already written.
+   when you make it. Never retype a table you have already written — and never
+   `cat` one either. Query them instead: `jq` a field, `grep` a key, `wc -l` a
+   count. A ledger holds a line per asset, and once you read the whole thing
+   into context every later request carries it.
 5. Coordinates the user gives are **absolute**. Use their digits exactly. Never
    round them, never swap in a value derived from the files, and never weigh
    them against EXIF GPS or against the place name `pono -d` prints back — that
@@ -190,8 +196,9 @@ sees EXIF, so an unrotated proxy is read sideways.
 
 ### 1.5 Vision
 
-`view` is the only way you look at anything. Batch per venue
+`view` is how you sweep the pool. Batch per venue
 hypothesis; pass the frames of one video together and treat them as one asset.
+The assets still unplaced at the 2.3 gate are the one exception — see there.
 
 ```bash
 cat "$WORK/proxy_list.txt"          # one line per still, current assets only
@@ -207,8 +214,18 @@ architecture, signage, furniture, vegetation, whether it looks like the same
 building as another batch. **Do not try to name the city, street or landmark** —
 you are matching assets to venues the user already named, not identifying them.
 
-Append each result to `$VISION` keyed by proxy path and read it back later.
+Append each result to `$VISION` as one tab-separated line keyed by proxy path.
 A proxy is `<original filename>.jpg`, so strip one trailing `.jpg`.
+
+Read it back one key at a time. Never `cat "$VISION"`: it holds a line per
+asset, so at pool scale it is the single largest thing you can put in context,
+and every later request carries it.
+
+```bash
+vis() { grep -m1 "^$1$(printf '\t')" "$VISION" | cut -f2-; }
+vis "IMG_1.jpg.jpg"                 # one proxy
+cut -f1 "$VISION" | wc -l           # how many are described, without reading them
+```
 
 ---
 
@@ -268,6 +285,13 @@ find "$POOL" -maxdepth 1 -type f -not -name '.*' ! -name '*_original' \
 cut -f1 "$ASSIGNMENTS" | sort > "$WORK/placed.txt"
 comm -3 "$WORK/have.txt" "$WORK/placed.txt"       # left: unplaced, right: extra
 ```
+
+Anything the left column still lists is an asset `view` could not pin to a
+venue. Those get `read` inline — the proxy, not the original — and placed from
+the whole image rather than a description that may have dropped the signage,
+the vegetation or the roofline the venue turns on. There are tens of these, not
+hundreds, so they fit inline; if the gate ever leaves you hundreds unplaced
+that is a bad venue hypothesis, not a vision problem, so revisit 1.5 first.
 
 Then show the user the venue table with counts, and wait for a yes.
 

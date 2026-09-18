@@ -20,7 +20,7 @@ def human_size(num_bytes: float) -> str:
 
 
 def main() -> int:
-    cutoff = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    cutoff = datetime.now().astimezone().isoformat()
     with Immich() as immich:
         print("Deleting originals on disk...")
         size_total = 0

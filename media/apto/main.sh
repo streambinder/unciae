@@ -212,8 +212,12 @@ while read -r fname <&3; do
 	final_timestamp="${TIME}"
 	if [ "${MODE}" != "static" ]; then
 		# parse timestamps. QuickTimeUTC makes exiftool expose mp4/mov dates (stored as utc
-		# by spec) with an explicit offset instead of a naive value we'd misread as local
-		exif_timestamps="$(exiftool -api QuickTimeUTC=1 -time:all "${fname}")"
+		# by spec) with an explicit offset instead of a naive value we'd misread as local.
+		# exiftool exits nonzero on files it can't fully parse, but even a corrupt file
+		# still yields the File System tags: keep whatever came back instead of letting
+		# pipefail take the whole run down with it
+		exif_timestamps="$(exiftool -api QuickTimeUTC=1 -time:all "${fname}")" ||
+			echo "Warning: exiftool could not fully parse ${basename}, using partial timestamps" >&2
 		# the grep exits nonzero when a file carries no create date at all, which under
 		# pipefail would take the whole run down with it
 		exif_create_date_raw="$(awk -F': ' '/^Create Date  /{print $2}' <<<"${exif_timestamps}" | grep -v "0000:00:00" | head -1 || true)"

@@ -27,11 +27,12 @@ Run the commands here as they are written. They are not sketches.
 2. Nothing under `$POOL` is ever deleted, moved, renamed or copied by you. Every
    `rm` you write spells out a path under `$WORK/` literally. Never hand `rm` a
    variable that has, anywhere in its life, held the path of a source file.
-3. Bulk vision goes through `view`, always as proxies: a description costs a
-   small fraction of what the image itself does, and a pool of any size does
-   not fit in context any other way. The exception is the assets still unplaced
-   at the 2.3 gate — `read` those directly, because there the venue rides on
-   detail a description may have dropped.
+3. Bulk vision means reading proxies inline with the read tool — never the
+   originals. A description costs a small fraction of what the image itself
+   does, so describe each proxy once into `$VISION` and never re-read it; a
+   pool of any size does not fit in context any other way. The exception is
+   the assets still unplaced at the 2.3 gate — re-read those, because there
+   the venue rides on detail a description may have dropped.
 4. Read metadata once into `$INVENTORY`. Append every decision to `$ASSIGNMENTS`
    when you make it. Never retype a table you have already written — and never
    `cat` one either. Query them instead: `jq` a field, `grep` a key, `wc -l` a
@@ -196,7 +197,8 @@ sees EXIF, so an unrotated proxy is read sideways.
 
 ### 1.5 Vision
 
-`view` is how you sweep the pool. Batch per venue
+Read proxies inline with the read tool — images come back in context, so
+keep each batch to a handful. Batch per venue
 hypothesis; pass the frames of one video together and treat them as one asset.
 The assets still unplaced at the 2.3 gate are the one exception — see there.
 
@@ -206,7 +208,9 @@ find "$FRAMES" -type f | sort       # video frames, three per clip
 ```
 
 ```text
-view(paths: ["$PROXIES/IMG_1.jpg.jpg", "$PROXIES/IMG_2.dng.jpg", ...])
+read(path: "$PROXIES/IMG_1.jpg.jpg")
+read(path: "$PROXIES/IMG_2.dng.jpg")
+...
 ```
 
 Ask about place, not time: indoor or outdoor, the kind of room or grounds,
@@ -286,10 +290,10 @@ cut -f1 "$ASSIGNMENTS" | sort > "$WORK/placed.txt"
 comm -3 "$WORK/have.txt" "$WORK/placed.txt"       # left: unplaced, right: extra
 ```
 
-Anything the left column still lists is an asset `view` could not pin to a
-venue. Those get `read` inline — the proxy, not the original — and placed from
-the whole image rather than a description that may have dropped the signage,
-the vegetation or the roofline the venue turns on. There are tens of these, not
+Anything the left column still lists is an asset the sweep could not pin to
+a venue. Read those inline — the proxy, not the original — and place them
+from the whole image rather than a description that may have dropped the
+signage, the vegetation or the roofline the venue turns on. There are tens of these, not
 hundreds, so they fit inline; if the gate ever leaves you hundreds unplaced
 that is a bad venue hypothesis, not a vision problem, so revisit 1.5 first.
 

@@ -7,8 +7,9 @@ from env; both can be overridden per call.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Any, Iterable, cast
+from typing import Any, cast
 
 import httpx
 
@@ -72,6 +73,31 @@ class Immich:
         # Immich expects camelCase; pass through as-is
         payload = cast(dict[str, Any], self._request("POST", "/search/metadata", json=filters))
         return [Asset.from_dict(a) for a in payload.get("assets", {}).get("items", [])]
+
+    def iter_metadata(self, **filters: Any) -> Iterator[Asset]:
+        """Yield every asset matching filters, paging through result pages."""
+        page = 1
+        while True:
+            payload = cast(
+                dict[str, Any],
+                self._request(
+                    "POST",
+                    "/search/metadata",
+                    json={"page": page, "size": 1000, **filters},
+                ),
+            )
+            items = payload.get("assets", {}).get("items", [])
+            if not items:
+                break
+            for item in items:
+                yield Asset.from_dict(item)
+            if len(items) < 1000:
+                break
+            page += 1
+
+    def trash_assets(self, ids: Iterable[str]) -> None:
+        """Move assets to trash (soft delete; purge with empty_trash)."""
+        self._request("DELETE", "/assets", json={"ids": list(ids)})
 
     def empty_trash(self) -> int:
         result = cast(dict[str, Any] | None, self._request("POST", "/trash/empty"))

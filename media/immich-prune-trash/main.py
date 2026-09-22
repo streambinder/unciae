@@ -131,10 +131,28 @@ def check_mount_guard(immich: Immich) -> list[dict[str, Any]]:
 
 
 def find_orphans(immich: Immich, libraries: list[dict[str, Any]]) -> list[Asset]:
-    """Non-trashed assets in external libraries whose original file is gone."""
+    """Non-trashed assets in external libraries whose original file is gone.
+
+    Only assets whose originalPath lives under one of the libraries'
+    importPaths are considered. Anything else (e.g. Immich-internal paths
+    such as transcoded renditions under /usr/src/app/upload, which are
+    invisible from the host) is never managed by this script and must be
+    left alone: a missing file there is a path-namespace mismatch, not an
+    orphan.
+    """
+    roots = [
+        os.path.normpath(path) for library in libraries for path in library.get("importPaths", [])
+    ]
+
+    def is_managed(original_path: str) -> bool:
+        normalized = os.path.normpath(original_path)
+        return any(normalized == root or normalized.startswith(root + os.sep) for root in roots)
+
     orphans: list[Asset] = []
     for library in libraries:
         for asset in paged_search(immich, libraryId=library["id"]):
+            if not is_managed(asset.original_path):
+                continue
             if not os.path.isfile(asset.original_path):
                 orphans.append(asset)
     return orphans

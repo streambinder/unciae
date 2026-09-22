@@ -111,7 +111,9 @@ while read -r fname <&3; do
 
 	# perform the changes
 	exiftool -overwrite_original -m -wm cg \
-		-GPSPosition="${latitude} ${longitude}" \
+		-GPSPosition="${latitude},${longitude}" \
+		-XMP:GPSLatitude="${latitude}" \
+		-XMP:GPSLongitude="${longitude}" \
 		"${fname}" &&
 		touch -c -a -m -t "${timestamp}" "${fname}"
 

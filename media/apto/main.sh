@@ -88,6 +88,7 @@ EXTS=(
 	jpeg
 	jpg
 	m4v
+	mkv
 	mov
 	mp4
 	nef

@@ -17,3 +17,6 @@ pono/main.sh -a @41.9028,12.4964 image.jpg
 ```
 
 The `-a` flag accepts either a place name (geocoded via OSM) or `@<lat>,<lon>` for direct positioning.
+
+By default only files lacking coordinates are written; files that already
+carry them are skipped. Pass `--force` to overwrite existing coordinates.

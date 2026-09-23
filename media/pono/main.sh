@@ -3,7 +3,7 @@
 # auxiliary functions
 
 function help() {
-	echo -e "Usage:\n\t$(basename "$0") [-d/--dry-run] [--hook command] -a <address|@lat,lon> [<path>...]\n\n  Address can be a place name to geocode (e.g. \"Via Petroselli 50, Roma\") or direct coordinates\n  as @<lat>,<lon> (e.g. @41.9028,12.4964) to skip geocoding and use the given position directly."
+	echo -e "Usage:\n\t$(basename "$0") [-d/--dry-run] [--force] [--hook command] -a <address|@lat,lon> [<path>...]\n\n  Address can be a place name to geocode (e.g. \"Via Petroselli 50, Roma\") or direct coordinates\n  as @<lat>,<lon> (e.g. @41.9028,12.4964) to skip geocoding and use the given position directly.\n\n  By default GPS is written only to files lacking coordinates; files that already\n  carry them are skipped. --force overwrites existing coordinates as well."
 }
 
 # shell setup
@@ -15,6 +15,7 @@ set -euo pipefail
 ADDRESS=""
 HOOK=""
 DRY_RUN=0
+FORCE=0
 TARGETS=()
 EXTS=(
 	3gp
@@ -41,6 +42,9 @@ while [[ $# -gt 0 ]]; do
 		;;
 	-d | --dry-run)
 		DRY_RUN=1
+		;;
+	--force)
+		FORCE=1
 		;;
 	-a | --address)
 		ADDRESS="$2"
@@ -102,6 +106,26 @@ fi
 
 exts="${EXTS[*]}"
 exts="${exts// /|}"
+
+# write GPS to one file. Unless --force is given, files that already carry
+# coordinates are left alone (-if guard); exiftool exits 2 for those.
+function write_gps() {
+	if [ "${FORCE}" = 1 ]; then
+		exiftool -overwrite_original -m \
+			-GPSPosition="${latitude},${longitude}" \
+			-XMP:GPSLatitude="${latitude}" \
+			-XMP:GPSLongitude="${longitude}" \
+			"$1" || return $?
+	else
+		exiftool -overwrite_original -m -if "not \$GPSLatitude" \
+			-GPSPosition="${latitude},${longitude}" \
+			-XMP:GPSLatitude="${latitude}" \
+			-XMP:GPSLongitude="${longitude}" \
+			"$1" || return $?
+	fi
+}
+
+FAILED=0
 while read -r fname <&3; do
 	basename="$(basename "${fname}")"
 	echo "Processing ${basename}..."
@@ -109,16 +133,26 @@ while read -r fname <&3; do
 	# fetch original modification time
 	timestamp="$(date -r "${fname}" "+%Y%m%d%H%M.%S")"
 
-	# perform the changes
-	exiftool -overwrite_original -m -wm cg \
-		-GPSPosition="${latitude},${longitude}" \
-		-XMP:GPSLatitude="${latitude}" \
-		-XMP:GPSLongitude="${longitude}" \
-		"${fname}" &&
+	# perform the changes; a nonzero status must not abort the batch
+	status=0
+	write_gps "${fname}" || status=$?
+	case "${status}" in
+	0)
 		touch -c -a -m -t "${timestamp}" "${fname}"
+		;;
+	2)
+		echo "Skipped (already geotagged): ${basename}"
+		;;
+	*)
+		echo "Failed to write ${basename}" >&2
+		FAILED=1
+		;;
+	esac
 
 	# run hook
 	[ -z "${HOOK}" ] || "${HOOK}" "${fname}"
 done 3< <(
 	find "${TARGETS[@]}" -type f -not -name '.*' | grep -iE ".*.(${exts})$"
 )
+
+exit "${FAILED}"

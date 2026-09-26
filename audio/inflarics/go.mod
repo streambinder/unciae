@@ -1,18 +1,16 @@
 module github.com/streambinder/unciae/audio/inflarics
 
-go 1.25.0
-
-toolchain go1.25.8
+go 1.26.2
 
 require (
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/gosimple/slug v1.15.0
 	github.com/spf13/cobra v1.10.2
-	github.com/streambinder/spotitube v1.1.9
+	github.com/streambinder/spotitube v1.2.0
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.12.0 // indirect
+	github.com/PuerkitoBio/goquery v1.13.0 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/andybalholm/cascadia v1.3.4 // indirect
@@ -23,7 +21,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )

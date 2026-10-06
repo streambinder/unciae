@@ -1,0 +1,6 @@
+# The limen service (platform/limen/Dockerfile) must run as root inside
+# its container: the Muse Gadget SDK owns the command socket as root
+# and drops to an unprivileged account per command, like the upstream
+# installer. On the host the container runs under a dedicated quadlet
+# with no published ports.
+AVD-DS-0002

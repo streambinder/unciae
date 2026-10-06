@@ -2,6 +2,8 @@
 # facebookincubator/muse-gadget-sdk, packaged as a container image.
 # Built and published to GHCR by the unciae push workflow; hosts
 # consume the published image and never build it locally.
+# In run mode the entrypoint also starts shim.py, an OpenAI-compatible
+# API on port 8001 in front of the gadget socket.
 # The service must run as root inside the container: it owns the command
 # socket and drops to the unprivileged gadget account per command via
 # --run-as, like the upstream installer (trivy DS-0002, waived in
@@ -46,6 +48,7 @@ COPY patch_network.py /tmp/patch_network.py
 RUN python3 /tmp/patch_network.py && rm /tmp/patch_network.py
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY shim.py /opt/shim/shim.py
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV MUSEGADGET_RUN_AS=gadget \
@@ -53,6 +56,8 @@ ENV MUSEGADGET_RUN_AS=gadget \
 
 HEALTHCHECK --interval=60s --timeout=10s \
     CMD test -S /run/musegadget/musegadget.sock
+
+EXPOSE 8001
 
 VOLUME ["/var/lib/musegadget"]
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

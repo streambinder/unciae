@@ -20,6 +20,8 @@ pair)
 	exec musegadget pair
 	;;
 run)
+	# Shim in background; the gadget service is the main process.
+	python3 /opt/shim/shim.py &
 	exec musegadget run --run-as "${MUSEGADGET_RUN_AS:-gadget}"
 	;;
 info)

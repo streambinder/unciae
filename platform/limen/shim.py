@@ -19,6 +19,11 @@ gadget file.write command), then waits up to SHIM_REPLY_WAIT_S seconds
 for that file and returns its content. On timeout it falls back to the
 receipt payload, the pre-protocol behaviour. Clients opt out per
 request with "wait_reply": false.
+
+Auth: when SHIM_API_KEYS is set (comma-separated), /v1/* requires an
+"Authorization: Bearer <key>" header matching one of the keys; other
+requests get a 403. /healthz stays open. With no keys configured the
+shim is open, for trusted networks only.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import socket
 import sys
 import time
@@ -39,6 +45,17 @@ MODEL_ID = os.environ.get("SHIM_MODEL_ID", "tiro")
 REPLIES_DIR = os.environ.get("SHIM_REPLIES_DIR", "/workspace/replies")
 REPLY_WAIT_S = int(os.environ.get("SHIM_REPLY_WAIT_S", "600"))
 REPLY_POLL_S = 2.0
+API_KEYS = [k.strip() for k in os.environ.get("SHIM_API_KEYS", "").split(",") if k.strip()]
+
+
+def authorized(headers) -> bool:
+    if not API_KEYS:
+        return True
+    auth = headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return False
+    token = auth[len("Bearer ") :]
+    return any(secrets.compare_digest(token, key) for key in API_KEYS)
 
 
 def log(msg: str) -> None:
@@ -202,8 +219,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _deny(self) -> None:
+        self._send_json(
+            403,
+            {
+                "error": {
+                    "message": "invalid api key",
+                    "type": "invalid_request_error",
+                    "code": "invalid_api_key",
+                }
+            },
+        )
+
     def do_GET(self):
         if self.path == "/v1/models":
+            if not authorized(self.headers):
+                self._deny()
+                return
             self._send_json(
                 200,
                 {
@@ -227,6 +259,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/v1/chat/completions":
             self._send_json(404, {"error": {"message": "not found"}})
+            return
+        if not authorized(self.headers):
+            self._deny()
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -321,6 +356,8 @@ def main() -> None:
     prepare_replies_dir()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     log(f"listening on :{PORT}, socket={SOCKET_PATH}, timeout={TIMEOUT_S}s")
+    if API_KEYS:
+        log(f"api key auth enabled ({len(API_KEYS)} key(s))")
     server.serve_forever()
 
 

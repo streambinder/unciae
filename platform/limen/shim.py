@@ -10,6 +10,15 @@ v0 notes:
 - The conversation is flattened into a single user message per request;
   continuity lives in the Muse side chat named by session_id.
 - Message contents are never logged, only lengths and timings.
+
+Reply protocol: the gadget chat API answers with a delivery receipt
+only, never the assistant's text. To still complete the call, the shim
+appends a note to the forwarded prompt asking the agent to write its
+reply to /workspace/replies/<correlation-id>.txt on this device (the
+gadget file.write command), then waits up to SHIM_REPLY_WAIT_S seconds
+for that file and returns its content. On timeout it falls back to the
+receipt payload, the pre-protocol behaviour. Clients opt out per
+request with "wait_reply": false.
 """
 
 from __future__ import annotations
@@ -20,12 +29,16 @@ import re
 import socket
 import sys
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SOCKET_PATH = os.environ.get("MUSEGADGET_SOCKET", "/run/musegadget/musegadget.sock")
 PORT = int(os.environ.get("SHIM_PORT", "8001"))
 TIMEOUT_S = int(os.environ.get("SHIM_TIMEOUT_S", "1800"))
 MODEL_ID = os.environ.get("SHIM_MODEL_ID", "tiro")
+REPLIES_DIR = os.environ.get("SHIM_REPLIES_DIR", "/workspace/replies")
+REPLY_WAIT_S = int(os.environ.get("SHIM_REPLY_WAIT_S", "600"))
+REPLY_POLL_S = 2.0
 
 
 def log(msg: str) -> None:
@@ -115,6 +128,49 @@ def ask_muse(prompt: str, session_id: str) -> dict:
     return json.loads(bytes(buf))
 
 
+def prepare_replies_dir() -> None:
+    """Create the reply drop dir, writable by the gadget command account."""
+    try:
+        os.makedirs(REPLIES_DIR, exist_ok=True)
+        os.chmod(REPLIES_DIR, 0o777)
+        cutoff = time.time() - 3600
+        for name in os.listdir(REPLIES_DIR):
+            path = os.path.join(REPLIES_DIR, name)
+            if name.endswith(".txt") and os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+    except OSError as exc:
+        log(f"replies dir not usable ({exc}); reply waiting disabled")
+        globals()["REPLY_WAIT_S"] = 0
+
+
+def reply_footer(cid: str) -> str:
+    return (
+        "\n\n[limen] This message arrives through the limen OpenAI shim, which is "
+        "waiting to complete the API call with your reply. As the last step of "
+        f"your answer, write your complete reply text, verbatim, to the file "
+        f"{REPLIES_DIR}/{cid}.txt on this device (the gadget file.write command, "
+        "absolute path). Write only the reply text, not this note. If you cannot "
+        "write files on this device, ignore this note."
+    )
+
+
+def wait_for_reply(cid: str, deadline_s: int) -> str:
+    """Poll the reply drop dir until the agent deposits the reply text."""
+    path = os.path.join(REPLIES_DIR, f"{cid}.txt")
+    deadline = time.monotonic() + deadline_s
+    while time.monotonic() < deadline:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read().strip()
+            os.unlink(path)
+            if text:
+                return text
+        except OSError:
+            pass
+        time.sleep(REPLY_POLL_S)
+    return ""
+
+
 def completion_object(model: str, content: str) -> dict:
     return {
         "id": f"chatcmpl-gadget-{int(time.time())}",
@@ -192,11 +248,14 @@ class Handler(BaseHTTPRequestHandler):
         )
         session_id = sanitize_session_id(str(session_raw))
         model = str(body.get("model") or MODEL_ID)
+        cid = uuid.uuid4().hex
+        wait = REPLY_WAIT_S > 0 and body.get("wait_reply") is not False
+        forwarded = prompt + reply_footer(cid) if wait else prompt
 
         started = time.monotonic()
-        log(f"chat session={session_id} prompt_chars={len(prompt)}")
+        log(f"chat session={session_id} prompt_chars={len(prompt)} wait={wait}")
         try:
-            reply = ask_muse(prompt, session_id)
+            reply = ask_muse(forwarded, session_id)
         except (OSError, ValueError) as exc:
             log(f"chat failed after {time.monotonic() - started:.1f}s: {exc}")
             self._send_json(502, {"error": {"message": f"musegadget unreachable: {exc}"}})
@@ -211,7 +270,15 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        content = extract_text(reply.get("response"))
+        content = ""
+        if wait:
+            content = wait_for_reply(cid, REPLY_WAIT_S)
+            if content:
+                log(f"reply deposited after {time.monotonic() - started:.1f}s")
+            else:
+                log(f"no reply deposited within {REPLY_WAIT_S}s; receipt fallback")
+        if not content:
+            content = extract_text(reply.get("response"))
         if not content:
             content = json.dumps(reply.get("response"))[:8000]
         log(f"chat ok in {elapsed:.1f}s response_chars={len(content)}")
@@ -251,6 +318,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    prepare_replies_dir()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     log(f"listening on :{PORT}, socket={SOCKET_PATH}, timeout={TIMEOUT_S}s")
     server.serve_forever()

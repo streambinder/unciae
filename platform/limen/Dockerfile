@@ -47,6 +47,15 @@ RUN useradd --create-home --uid 10001 gadget \
 COPY patch_network.py /tmp/patch_network.py
 RUN python3 /tmp/patch_network.py && rm /tmp/patch_network.py
 
+# Patch: add POST /chat/subscribe streaming to the SDK (event stream for
+# replies; upstream implements it only in the ESP32 firmware).
+COPY patch_subscribe.py /tmp/patch_subscribe.py
+RUN python3 /tmp/patch_subscribe.py \
+    && grep -n 'SUBSCRIBE_PATH\|_local_stream_request' \
+        /opt/musegadget/venv/lib/python3.11/site-packages/musegadget/link_client.py \
+        /opt/musegadget/venv/lib/python3.11/site-packages/musegadget/service.py \
+    && rm /tmp/patch_subscribe.py
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY shim.py /opt/shim/shim.py
 RUN chmod +x /usr/local/bin/entrypoint.sh

@@ -186,22 +186,39 @@ Respect idiomatic layout, do not force `src/` everywhere.
 - Feature branches: `feat/<short-name>` (covers fix/chore/docs too)
 - Signed commits always, `pull.rebase = true`
 - Tags `vMAJOR.MINOR.PATCH` SemVer, no `v0` perpetual
-- `push.yml` on master + PRs, `tag.yml` on `v*` creates release
+- `push.yml` on branch pushes only (never `pull_request`), `tag.yml` on `v*` creates release
 - No CHANGELOG file, use GitHub auto notes.
 
 ## 11. CI Workflows
 
-Two canonical: `push.yml` (master + PRs) and `tag.yml` (`v*`). Others allowed
+Two canonical: `push.yml` and `tag.yml` (`v*`). Others allowed
 if single-purpose (`dependabot-auto-merge.yml`, `codeql.yml`).
 
-### 11.1 Publish Never on PR
+`push.yml` triggers on branch pushes only, never on `pull_request`:
+
+```yaml
+on:
+  workflow_dispatch: null
+  push:
+    branches: ["**"]
+```
+
+A `pull_request` trigger duplicates every run of a PR branch: the push run
+on `refs/heads/<branch>` and the PR run on `refs/pull/<n>/merge` carry
+different refs, so the concurrency group cannot collapse them, and
+Actions minutes roughly double. PRs still get their checks from the push
+run on the branch head commit. Tag pushes stay out of `push.yml`:
+`tag.yml` owns `v*`. The push run on master is the safety net for merged
+trees: it tests the merge result right after the merge and gates
+publication on it.
+
+### 11.1 Publish gating
 
 Publish steps (image push, npm/pip publish, `gh release`, `terraform apply`)
-must be gated `if: github.event_name != 'pull_request'` or trigger only
-`tags: ['v*']`. Exception: container image push to `${{github.sha}}` tag only
-is allowed in PRs and feature branches to validate build, never `:latest` or
-`:release`. Never `pull_request_target`. Secrets for publish never
-referenced in PR-reachable steps.
+are gated on the ref, never on the event: `:latest` only from
+`refs/heads/master`, releases only from `tag.yml` on `v*`. A container
+image push to the `${{github.sha}}` tag is allowed on any branch to
+validate the build. Never `pull_request_target`.
 
 ### 11.2 Concurrency
 

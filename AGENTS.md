@@ -300,3 +300,23 @@ For new repositories/services/packages, prefer Latin roots — short, evocative.
 ## 21. LICENSE
 
 GPL-3.0 universally, `LICENSE` at root.
+
+## 22. Writing Standard
+
+All technical writing follows ASD-STE100. Scope: documentation, readme files,
+pull request descriptions, commit message bodies. The rules do not apply to
+code and to quotations. In design and planning documents only rule 4 applies;
+sentence length limits do not apply.
+
+1. Keep sentences short: maximum 20 words in a procedure, 25 in a description.
+2. Write one instruction in each sentence.
+3. Use the active voice.
+4. Use one term for one concept. Do not use synonyms for the same concept.
+5. Do not use a pronoun when its reference is not clear.
+6. Use a verb to describe an action. Do not hide an action in a noun phrase.
+
+Authors apply the rules when they write. Reviewers check the rules when they
+review. No automated checker enforces this section.
+
+If the context requires another language, use that language and apply the same
+principles to it.

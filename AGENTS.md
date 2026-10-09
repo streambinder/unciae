@@ -320,3 +320,18 @@ review. No automated checker enforces this section.
 
 If the context requires another language, use that language and apply the same
 principles to it.
+
+## 23. Consistency and Readability
+
+Code and configuration must read as if one hand wrote the file.
+
+- Infer the conventions of the file and of the codebase. Apply the
+  conventions that you infer.
+- Conventions include block separation, naming, ordering, indentation and
+  comment style.
+- Apply each convention to the whole file. Do not mix two conventions in
+  one file.
+- When no convention exists, choose for readability first and for
+  compactness second.
+- A change follows the conventions of the file that the change touches.
+  Do not reformat parts that the change does not touch.

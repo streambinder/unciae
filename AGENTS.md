@@ -320,3 +320,18 @@ review. No automated checker enforces this section.
 
 If the context requires another language, use that language and apply the same
 principles to it.
+
+## 23. Vertical Whitespace
+
+Formatters own the layout of source code. The rules in this section own the
+layout of hand-edited configuration and data files: YAML, INI, gitconfig,
+TOML.
+
+- Separate two top-level blocks with exactly one blank line. A top-level
+  block is a YAML top-level key, an INI section, a gitconfig section.
+- Keep the entries inside a block compact. Do not put a blank line between
+  two sibling entries below the top level.
+- Keep a comment block attached to the block the comment documents. Put the
+  blank line before the comment block.
+- Apply the rules to the whole file. A file that separates only some
+  top-level blocks does not comply with this section.

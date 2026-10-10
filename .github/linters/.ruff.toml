@@ -1,7 +1,9 @@
 line-length = 100
 
-# anchor is consumed as a dependency across this monorepo (renovo sources it
-# from tui/anchor via git), so classify it as third-party for import sorting:
-# the same classification isort applies, keeping both sorters in agreement.
+# anchor and immich are consumed as dependencies across this monorepo
+# (renovo sources anchor from tui/anchor via git, the immich tools source
+# immich from media/immich via git), so classify both as third-party for
+# import sorting: the same classification isort applies, keeping both
+# sorters in agreement.
 [lint.isort]
-known-third-party = ["anchor"]
+known-third-party = ["anchor", "immich"]

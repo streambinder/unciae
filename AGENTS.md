@@ -271,11 +271,17 @@ Write unit tests next to the code that the tests cover.
 
 - Name the test file after the module: `module_test.ext` or
   `test_module.ext`. Follow the naming convention of the language.
+- A framework or a toolchain may dictate a different test layout.
+  Follow the layout that the framework or the toolchain dictates.
+  The exception covers the layout only. The other rules of this
+  section still apply.
 - Integration and end-to-end tests live separately from unit tests.
 - CI runs the unit tests on every push. A failing test blocks the merge.
 - CI measures unit test coverage on every push. The minimum coverage
   is 90%.
 - Coverage below 90% blocks the merge.
+- Non-test code never changes to satisfy a test. Change the test
+  instead.
 
 ## 16. Dependencies
 

@@ -267,8 +267,15 @@ No local framework (`pre-commit`, `husky`). CI is source of truth.
 
 ## 15. Testing
 
-Target 100% unit coverage. Coverage drop = blocker. Integration/end-to-end
-separate.
+Write unit tests next to the code that the tests cover.
+
+- Name the test file after the module: `module_test.ext` or
+  `test_module.ext`. Follow the naming convention of the language.
+- Integration and end-to-end tests live separately from unit tests.
+- CI runs the unit tests on every push. A failing test blocks the merge.
+- CI measures unit test coverage on every push. The minimum coverage
+  is 90%.
+- Coverage below 90% blocks the merge.
 
 ## 16. Dependencies
 

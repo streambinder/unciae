@@ -208,3 +208,59 @@ def test_no_extra_blank_lines_between_lot_prints() -> None:
     after_newlines = buf.getvalue().count("\n")
     delta = after_newlines - baseline_newlines
     assert delta == 20, f"expected 20 newlines from 20 redraws of 2 lots, got {delta}"
+
+
+def test_truncate_returns_short_text_unchanged() -> None:
+    from anchor.anchor import _truncate, _visible_len
+
+    assert _truncate("short", 10) == "short"
+    assert _visible_len("short") == 5
+
+
+def test_truncate_cuts_long_plain_text_to_width() -> None:
+    from anchor.anchor import _truncate, _visible_len
+
+    result = _truncate("x" * 50, 10)
+    assert _visible_len(result) == 10
+
+
+def test_truncate_preserves_ansi_sequences_while_cutting() -> None:
+    from anchor.anchor import _truncate, _visible_len
+
+    result = _truncate("\x1b[31m" + "y" * 50, 8)
+    assert result.startswith("\x1b[31m")
+    assert _visible_len(result) == 8
+
+
+def test_reads_in_plain_mode() -> None:
+    buf = io.StringIO()
+    window = Window(stream=buf)
+    window.enable_plain_mode()
+    with _stdin("plain input\n"):
+        value = window.reads("prompt %s:", "here")
+    assert value == "plain input"
+    assert "prompt here:" in buf.getvalue()
+
+
+def test_max_width_uses_terminal_columns(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+    import shutil
+
+    def fake_size(fd: int = 1) -> os.terminal_size:
+        return os.terminal_size((101, 24))
+
+    monkeypatch.setattr(shutil, "get_terminal_size", fake_size)
+    assert Window(stream=io.StringIO())._max_width() == 100
+
+
+def test_max_width_falls_back_when_terminal_size_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+    import shutil
+
+    def broken_size(fd: int = 1) -> os.terminal_size:
+        raise OSError("no terminal")
+
+    monkeypatch.setattr(shutil, "get_terminal_size", broken_size)
+    assert Window(stream=io.StringIO())._max_width() == 80

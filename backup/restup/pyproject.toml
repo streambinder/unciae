@@ -12,7 +12,7 @@ license = { text = "GPL-3.0-or-later" }
 dependencies = ["pyyaml"]
 
 [dependency-groups]
-dev = ["mypy", "types-PyYAML"]
+dev = ["mypy", "pytest", "pytest-cov", "types-PyYAML"]
 
 [tool.hatch.build.targets.wheel]
 packages = []
@@ -21,3 +21,10 @@ force-include = { "main.py" = "restup/main.py" }
 [tool.mypy]
 strict = true
 files = ["main.py"]
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-fail-under=90 --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["test_*.py"]

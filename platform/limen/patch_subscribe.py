@@ -397,7 +397,7 @@ SERVICE_PATCHES = [
 ]
 
 
-def patch_file(path: str, patches: list) -> None:
+def patch_file(path: str, patches: list[tuple[str, str]]) -> None:
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     for needle, replacement in patches:

@@ -51,7 +51,9 @@ import socket
 import sys
 import time
 import uuid
+from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 SOCKET_PATH = os.environ.get("MUSEGADGET_SOCKET", "/run/musegadget/musegadget.sock")
 PORT = int(os.environ.get("SHIM_PORT", "8001"))
@@ -63,7 +65,7 @@ REPLY_POLL_S = 2.0
 API_KEYS = [k.strip() for k in os.environ.get("SHIM_API_KEYS", "").split(",") if k.strip()]
 
 
-def authorized(headers) -> bool:
+def authorized(headers: Any) -> bool:
     if not API_KEYS:
         return True
     auth = headers.get("Authorization", "")
@@ -82,7 +84,7 @@ def sanitize_session_id(raw: str) -> str:
     return sid[:64] or "pi-main"
 
 
-def message_text(content) -> str:
+def message_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -96,7 +98,7 @@ def message_text(content) -> str:
     return "" if content is None else str(content)
 
 
-def build_prompt(messages: list) -> str:
+def build_prompt(messages: list[Any]) -> str:
     lines = []
     for m in messages:
         if not isinstance(m, dict):
@@ -108,7 +110,7 @@ def build_prompt(messages: list) -> str:
     return "\n\n".join(lines)
 
 
-def extract_text(node, depth: int = 0) -> str:
+def extract_text(node: Any, depth: int = 0) -> str:
     """Best-effort extraction of assistant text from a /chat/stream reply."""
     if depth > 8:
         return ""
@@ -127,9 +129,9 @@ def extract_text(node, depth: int = 0) -> str:
             if isinstance(first, dict):
                 msg = first.get("message") or {}
                 if isinstance(msg, dict) and isinstance(msg.get("content"), str):
-                    return msg["content"]
+                    return str(msg["content"])
                 if isinstance(first.get("text"), str):
-                    return first["text"]
+                    return str(first["text"])
         for key in ("text", "content", "message", "response", "result"):
             value = node.get(key)
             if isinstance(value, str) and value.strip():
@@ -145,7 +147,7 @@ def extract_text(node, depth: int = 0) -> str:
     return ""
 
 
-def ask_muse(prompt: str, session_id: str) -> dict:
+def ask_muse(prompt: str, session_id: str) -> dict[str, Any]:
     request = json.dumps({"message": prompt, "session_id": session_id}).encode() + b"\n"
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(TIMEOUT_S)
@@ -157,10 +159,11 @@ def ask_muse(prompt: str, session_id: str) -> dict:
             if not chunk:
                 break
             buf += chunk
-    return json.loads(bytes(buf))
+    reply: dict[str, Any] = json.loads(bytes(buf))
+    return reply
 
 
-def iter_muse_stream(prompt: str, session_id: str):
+def iter_muse_stream(prompt: str, session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
     """Yield ("event", dict) lines then one ("result", dict) from the socket.
 
     Asks the gadget service for the streaming turn (patch_subscribe.py);
@@ -211,7 +214,7 @@ class StreamTranslator:
         self.done_text = ""
         self.finished = False
 
-    def feed(self, event: dict) -> str:
+    def feed(self, event: dict[str, Any]) -> str:
         """Return the text to emit as one SSE delta, or "" for none."""
         name = str(event.get("event") or "")
         mid = str(event.get("message_id") or "")
@@ -284,7 +287,7 @@ def wait_for_reply(cid: str, deadline_s: int) -> str:
     return ""
 
 
-def completion_object(model: str, content: str) -> dict:
+def completion_object(model: str, content: str) -> dict[str, Any]:
     return {
         "id": f"chatcmpl-gadget-{int(time.time())}",
         "object": "chat.completion",
@@ -304,10 +307,10 @@ def completion_object(model: str, content: str) -> dict:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, fmt, *args):  # keep stderr logs ours only
+    def log_message(self, format: str, *args: Any) -> None:  # keep stderr logs ours only
         pass
 
-    def _send_json(self, status: int, obj: dict) -> None:
+    def _send_json(self, status: int, obj: dict[str, Any]) -> None:
         body = json.dumps(obj).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -335,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
 
-        def send_chunk(delta: dict, finish: str | None) -> None:
+        def send_chunk(delta: dict[str, Any], finish: str | None) -> None:
             send_headers()
             chunk = {
                 "id": comp_id,
@@ -348,13 +351,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         def send_delta(text: str) -> None:
-            delta: dict = {"content": text}
+            delta: dict[str, Any] = {"content": text}
             if not state["sent"]:
                 delta = {"role": "assistant", "content": text}
             state["sent"] = True
             send_chunk(delta, None)
 
-        result: dict | None = None
+        result: dict[str, Any] | None = None
         try:
             for kind, obj in iter_muse_stream(forwarded, session_id):
                 if kind == "result":
@@ -419,7 +422,7 @@ class Handler(BaseHTTPRequestHandler):
             },
         )
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         if self.path == "/v1/models":
             if not authorized(self.headers):
                 self._deny()
@@ -444,7 +447,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json(404, {"error": {"message": "not found"}})
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         if self.path != "/v1/chat/completions":
             self._send_json(404, {"error": {"message": "not found"}})
             return

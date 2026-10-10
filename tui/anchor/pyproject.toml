@@ -12,7 +12,7 @@ license = { text = "GPL-3.0-or-later" }
 dependencies = ["colorama>=0.4.6"]
 
 [dependency-groups]
-dev = ["mypy", "pytest", "types-colorama"]
+dev = ["mypy", "pytest", "pytest-cov", "types-colorama"]
 
 # flat layout: anchor.py + __init__.py at this dir -> wheel module `anchor`
 [tool.hatch.build.targets.wheel]
@@ -22,3 +22,10 @@ force-include = { "anchor.py" = "anchor/anchor.py", "__init__.py" = "anchor/__in
 [tool.mypy]
 strict = true
 files = ["anchor.py", "__init__.py", "test_anchor.py"]
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-fail-under=90 --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["test_*.py"]

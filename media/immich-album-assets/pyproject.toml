@@ -11,7 +11,7 @@ license = { text = "GPL-3.0-or-later" }
 dependencies = ["immich"]
 
 [dependency-groups]
-dev = ["mypy"]
+dev = ["mypy", "pytest", "pytest-cov"]
 
 [tool.uv.sources]
 immich = { git = "https://github.com/streambinder/unciae.git", branch = "master", subdirectory = "media/immich" }
@@ -23,3 +23,10 @@ force-include = { "main.py" = "immich_album_assets/main.py" }
 [tool.mypy]
 strict = true
 files = ["main.py"]
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-fail-under=90 --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["test_*.py"]

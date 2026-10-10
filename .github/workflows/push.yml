@@ -84,8 +84,31 @@ jobs:
             (cd "$dir" && uv run mypy --strict)
             echo "::endgroup::"
           done < <(find . -name pyproject.toml -not -path '*/.venv/*' -print0)
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.11.12
+      - name: Run pytest with coverage per Python project
+        run: |
+          set -euo pipefail
+          # same discovery as the mypy job; each pyproject owns its gate via
+          # [tool.pytest.ini_options] addopts with --cov-fail-under=90 and
+          # [tool.coverage.run] source limited to the project sources
+          while IFS= read -r -d '' proj; do
+            dir="$(dirname "$proj")"
+            echo "::group::$dir"
+            uv lock --check --project "$dir"
+            uv sync --frozen --project "$dir"
+            (cd "$dir" && uv run pytest)
+            echo "::endgroup::"
+          done < <(find . -name pyproject.toml -not -path '*/.venv/*' -print0)
   notify-clavis:
-    needs: [super-linter, mypy]
+    needs: [super-linter, mypy, pytest]
     if: >-
       success() &&
       github.event_name == 'push' &&
@@ -104,7 +127,7 @@ jobs:
               "sha": "${{ github.sha }}"
             }
   notify-imperium:
-    needs: [super-linter, mypy]
+    needs: [super-linter, mypy, pytest]
     if: >-
       success() &&
       github.event_name == 'push' &&

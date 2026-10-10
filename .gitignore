@@ -8,3 +8,4 @@ uv.toml
 .ruff_cache
 .pytest_cache
 ai/ianua/ianua
+.coverage

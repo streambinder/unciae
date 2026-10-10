@@ -277,6 +277,20 @@ concern — bump, adapt, move on. Pin exact versions where possible, avoid
 `^~>=` in prod. Tiebreaker: newest versions satisfying hard constraints only.
 Lockfiles ignored except `go.sum` and `uv.lock` (commit per §12).
 
+### 16.1 Library Selection
+
+Minimize the code surface that the repository owns and maintains.
+
+- Write in-house only functionality that belongs to the product logic.
+- For other functionality, simplify the problem away when possible.
+- When simplification is not viable, delegate to a specialized library.
+- A small and self-contained helper may stay in-house.
+- Select libraries with an established reputation: active maintenance,
+  wide adoption, a verifiable track record.
+- Do not adopt an obscure or unmaintained library to avoid a small amount
+  of in-house code.
+- Every adopted library follows the update rules of §6 and §16.
+
 ## 17. Definition of Done
 
 Done only when: feature works, formatted (§3.1), linter clean, coverage kept,

@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"log"
-	"math/rand/v2"
+	"math/big"
 
 	spotitube "github.com/streambinder/spotitube/spotify"
 	spotify "github.com/zmb3/spotify/v2"
@@ -115,9 +116,13 @@ func indicesSlice(length int, random bool) (slice []int) {
 		slice = append(slice, i)
 	}
 	if random {
-		rand.Shuffle(len(slice), func(i, j int) {
-			slice[i], slice[j] = slice[j], slice[i]
-		})
+		for i := len(slice) - 1; i > 0; i-- {
+			j, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+			if err != nil {
+				log.Fatal(err)
+			}
+			slice[i], slice[j.Int64()] = slice[j.Int64()], slice[i]
+		}
 	}
 	return
 }

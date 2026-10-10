@@ -73,8 +73,9 @@ class Restup:
         if "regexes" in task:
             for regex in task["regexes"]:
                 regexes += ["--iexclude", regex]
-        with subprocess.Popen(["echo", task["password"]], stdout=subprocess.PIPE) as pipe_auth:
-            with subprocess.Popen(
+        with (
+            subprocess.Popen(["echo", task["password"]], stdout=subprocess.PIPE) as pipe_auth,
+            subprocess.Popen(
                 [
                     "restic",
                     "-r",
@@ -86,15 +87,16 @@ class Restup:
                 + regexes,
                 stdin=pipe_auth.stdout,
                 stdout=subprocess.PIPE,
-            ) as pipe_restic:
-                pipe_out, pipe_err = pipe_restic.communicate()
-                if pipe_err is not None:
-                    self.__t_print(
-                        f"Unable to backup {task['repository']} repository: {pipe_err!r}",
-                        file=sys.stderr,
-                    )
-                    return
-                self.__t_print(pipe_out)
+            ) as pipe_restic,
+        ):
+            pipe_out, pipe_err = pipe_restic.communicate()
+            if pipe_err is not None:
+                self.__t_print(
+                    f"Unable to backup {task['repository']} repository: {pipe_err!r}",
+                    file=sys.stderr,
+                )
+                return
+            self.__t_print(pipe_out)
 
         if "postspawn" in task:
             try:
@@ -108,8 +110,9 @@ class Restup:
 
         if "retention" in task:
             self.__t_print(f"Enforcing {task['retention']} retention...")
-            with subprocess.Popen(["echo", task["password"]], stdout=subprocess.PIPE) as pipe_auth:
-                with subprocess.Popen(
+            with (
+                subprocess.Popen(["echo", task["password"]], stdout=subprocess.PIPE) as pipe_auth,
+                subprocess.Popen(
                     [
                         "restic",
                         "-r",
@@ -121,16 +124,17 @@ class Restup:
                     ],
                     stdin=pipe_auth.stdout,
                     stdout=subprocess.PIPE,
-                ) as pipe_restic:
-                    pipe_out, pipe_err = pipe_restic.communicate()
-                    if pipe_err is not None:
-                        self.__t_print(
-                            f"Unable to apply retention on {task['repository']} repository: "
-                            f"{pipe_err!r}",
-                            file=sys.stderr,
-                        )
-                        return
-                    self.__t_print(pipe_out)
+                ) as pipe_restic,
+            ):
+                pipe_out, pipe_err = pipe_restic.communicate()
+                if pipe_err is not None:
+                    self.__t_print(
+                        f"Unable to apply retention on {task['repository']} repository: "
+                        f"{pipe_err!r}",
+                        file=sys.stderr,
+                    )
+                    return
+                self.__t_print(pipe_out)
 
         self.__t_print(f"Repository {task['repository']} updated")
 

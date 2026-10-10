@@ -91,7 +91,7 @@ def main(argv: list[str]) -> int:
     if args.hook:
         print(f"Running hook: {args.hook}", file=sys.stderr)
         # shell=True is intentional — hook is operator-supplied, not user-tainted input
-        subprocess.run(args.hook, shell=True, check=True)  # noqa: S602
+        subprocess.run(args.hook, shell=True, check=True)
 
     return 0
 

@@ -64,7 +64,7 @@ ENV MUSEGADGET_RUN_AS=gadget \
     PYTHONUNBUFFERED=1
 
 HEALTHCHECK --interval=60s --timeout=10s \
-    CMD test -S /run/musegadget/musegadget.sock
+    CMD ["test", "-S", "/run/musegadget/musegadget.sock"]
 
 EXPOSE 8001
 

@@ -176,7 +176,7 @@ def dep(
                             )
                             lot.close("failed")
                             return
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # logic/runtime errors share the sticky error tier with stderr
                 window.anchor_printf(f"{program}: {exc}")
                 lot.close("raised")

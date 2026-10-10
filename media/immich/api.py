@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import httpx
 
@@ -52,7 +52,7 @@ class Immich:
             timeout=timeout,
         )
 
-    def __enter__(self) -> Immich:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_: object) -> None:

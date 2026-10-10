@@ -32,7 +32,7 @@ import re
 import shutil
 import sys
 import threading
-from typing import TextIO
+from typing import Self, TextIO
 
 from colorama import Fore, Style
 from colorama import init as _colorama_init
@@ -204,7 +204,7 @@ class Window:
             self._block_rows = 0
             self._stream.flush()
 
-    def __enter__(self) -> Window:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc: object) -> None:

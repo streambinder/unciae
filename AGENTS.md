@@ -288,7 +288,6 @@ Write unit tests next to the code that the tests cover.
 Always upgrade to latest. Weekly Dependabot, daily OK. Backwards compat not a
 concern — bump, adapt, move on. Pin exact versions where possible, avoid
 `^~>=` in prod. Tiebreaker: newest versions satisfying hard constraints only.
-Lockfiles ignored except `go.sum` and `uv.lock` (commit per §12).
 
 ### 16.1 Library Selection
 

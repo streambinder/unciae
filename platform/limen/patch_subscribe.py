@@ -1,134 +1,48 @@
 #!/usr/bin/env python3
-"""Build-time patch for musegadget: add POST /chat/subscribe streaming.
+"""Build-time patch for musegadget: stream replies on the local socket.
 
-The Linux SDK only knows POST /chat/stream, whose response is a delivery
-receipt; the assistant's text never comes back on that request. The Muse
-VM also offers POST /chat/subscribe, a long-lived NDJSON event stream
-(agent.status, delta.text_append, delta.message_done, message.*), which
-upstream implements only in the ESP32 firmware. Community PR
-facebookincubator/muse-gadget-sdk#100 proved the same approach on Linux
-against a real Muse, side chats included; this patch adapts that design
-to our image, kept as small as a build-time patch allows:
+Upstream's LinkSession now speaks POST /chat/subscribe itself
+(subscribe_chat yields the NDJSON event rows), but the local command
+socket in service.py still answers one request line with one result
+line, so the shim cannot see a reply before the turn ends. This patch
+adds the streaming mode to service.py only:
 
-* link_client.py gains parse_chat_event (flatten one NDJSON row),
-  ReplyTracker (which event ends our turn; correlation is by order, see
-  its docstring), a _Subscription stream object registered in the
-  existing LinkSession._requests map (the stock read loop already
-  dispatches frames to it one by one), and subscribe/close_subscription
-  methods on LinkSession.
-* service.py gains a streaming mode for the local socket: a request with
-  "subscribe": true opens the subscription before send_chat, forwards
-  each event as its own JSON line ({"event": ...}) while the turn runs,
-  and finishes with the usual result line as the last line. Requests
-  without it keep the exact one-line behaviour.
+* _flatten_chat_event flattens one event row into the event, ids and
+  text the shim consumes; _ReplyTracker tells which event ends our
+  turn (correlation is by order, see its docstring).
+* A socket request with "subscribe": true opens the subscription
+  before send_chat, forwards each event as its own JSON line
+  ({"event": ...}) while the turn runs, and finishes with the usual
+  result line as the last line. Requests without it keep the exact
+  one-line behaviour.
 
-Fails the build loudly if upstream changes an expected line. An optional
-first argument overrides the musegadget package directory (for tests).
+Fails the build loudly if upstream changes an expected line. An
+optional first argument overrides the musegadget package directory
+(for tests).
 """
 
 import glob
 import sys
 
-LINK_PATCHES = [
+SERVICE_PATCHES = [
     (
-        "separate ``POST /chat/stream`` requests on the same session.\n",
-        (
-            "separate ``POST /chat/stream`` requests on the same session. Replies "
-            "arrive\non ``POST /chat/subscribe``, a live NDJSON event stream.\n"
-        ),
+        "import asyncio\nimport json\n",
+        "import asyncio\nimport collections\nimport json\n",
     ),
     (
-        "import asyncio\nimport enum\n",
-        "import asyncio\nimport collections\nimport enum\n",
+        "MAX_LOCAL_REQUEST = 64 * 1024\n",
+        "MAX_LOCAL_REQUEST = 64 * 1024\nSTREAM_WAIT_S = 660\nSTREAM_QUIET_S = 15\n",
     ),
     (
-        'CHAT_PATH = "/chat/stream"\n',
-        (
-            'CHAT_PATH = "/chat/stream"\nSUBSCRIBE_PATH = "/chat/subscribe"\n'
-            "MAX_EVENT_LINE = 1024 * 1024\n"
-        ),
-    ),
-    (
-        "        self._requests: dict[int, _Request] = {}\n",
-        "        self._requests: dict[int, _Request | _Subscription] = {}\n",
-    ),
-    (
-        """            for request in self._requests.values():
-                if not request.done.done():
-                    request.done.set_exception(ConnectionError("session ended"))
-""",
-        """            for request in self._requests.values():
-                request.abort()
-""",
-    ),
-    (
-        "    # -- Sending --------------------------------------------------------------\n",
-        '''    # -- Replies: POST /chat/subscribe ----------------------------------------
-
-    async def subscribe(self, session_id: str | None, sink) -> "_Subscription":
-        """Open a /chat/subscribe stream for one chat and feed events to sink.
-
-        ``session_id`` selects a side chat; without it the subscription is
-        for the main chat. The stream stays open until close_subscription
-        or the end of the session.
-        """
-        body = json.dumps({"session_id": session_id}).encode() if session_id else b"{}"
-        headers = [
-            Header("Content-Type", "application/json"),
-            Header("Accept", "application/x-ndjson"),
-            Header("x-request-id", str(uuid.uuid4())),
-            Header("x-app-id", APP_ID),
-        ]
-        encrypted = self._transport.encrypt_http_request(
-            "POST", SUBSCRIBE_PATH, body, headers=headers)
-        subscription = _Subscription(encrypted.stream_id, sink)
-        self._requests[encrypted.stream_id] = subscription
-        await self._send_frames(encrypted.frames)
-        return subscription
-
-    async def close_subscription(self, subscription: "_Subscription") -> None:
-        self._requests.pop(subscription.stream_id, None)
-        if subscription.closed.is_set():
-            return
-        subscription.abort()
-        try:
-            await self._send_frames(self._transport.encrypt_reset(subscription.stream_id))
-        except Exception as exc:
-            log.debug("could not reset the subscribe stream: %s", exc)
-
-    # -- Sending --------------------------------------------------------------
-''',
-    ),
-    (
-        """    def on_frame(self, frame) -> None:
-        if self.done.done():
-            return
-""",
-        """    def abort(self) -> None:
-        if not self.done.done():
-            self.done.set_exception(ConnectionError("session ended"))
-
-    def on_frame(self, frame) -> None:
-        if self.done.done():
-            return
-""",
-    ),
-    (
-        "\nclass _NoRequest:\n",
-        '''
-
-def parse_chat_event(line: bytes) -> dict | None:
+        "@dataclass\nclass Service:\n",
+        '''def _flatten_chat_event(row: dict) -> dict | None:
     """Flatten one /chat/subscribe row into event, ids and text, or None.
 
-    Rows that are not events (the subscription acknowledgement, heartbeats)
-    and malformed rows return None. Text precedence follows the ESP32
-    firmware: display_text, then content, then text (the incremental chunk
-    on delta.text_append, the full text on delta.message_done).
+    Rows that are not events return None. Text precedence follows the
+    ESP32 firmware: display_text, then content, then text (the
+    incremental chunk on delta.text_append, the full text on
+    delta.message_done).
     """
-    try:
-        row = json.loads(line)
-    except ValueError:
-        return None
     if not isinstance(row, dict) or row.get("type") != "event":
         return None
     payload = row.get("payload")
@@ -148,16 +62,17 @@ def parse_chat_event(line: bytes) -> dict | None:
     }
 
 
-class ReplyTracker:
+class _ReplyTracker:
     """Tells whether a subscribe event ends the turn for one posted note.
 
     Correlation is by order, not by id: reply_to_message_id is empty on
-    replies and parent_message_id is the reply's own id. So the answer is
-    the first assistant message that completes after the message.user
-    event for our note (history replayed when the subscription opens
-    comes before it), or any completing message that names our note in
-    reply_to. The note id is known only once the /chat/stream ack
-    returns, so feed() comes in two phases around set_note_id().
+    replies and parent_message_id is the reply's own id. So the answer
+    is the first assistant message that completes after the
+    message.user event for our note (history replayed when the
+    subscription opens comes before it), or any completing message
+    that names our note in reply_to. The note id is known only once
+    the /chat/stream ack returns, so feed() comes in two phases around
+    set_note_id().
     """
 
     def __init__(self) -> None:
@@ -186,66 +101,9 @@ class ReplyTracker:
         return not (self._owner and mid and mid != self._owner)
 
 
-class _Subscription:
-    """One /chat/subscribe stream, decoded into events for a sink.
-
-    Body bytes are buffered and split into NDJSON lines as they arrive;
-    each complete line is parsed and handed to the sink immediately, not
-    at end_body. Repeated seq numbers are dropped.
-    """
-
-    def __init__(self, stream_id: int, sink) -> None:
-        self.stream_id = stream_id
-        self.closed = asyncio.Event()
-        self._sink = sink
-        self._buffer = b""
-        self._seen: collections.deque = collections.deque(maxlen=256)
-
-    def abort(self) -> None:
-        self.closed.set()
-
-    def on_frame(self, frame) -> None:
-        if self.closed.is_set():
-            return
-        if frame.kind == "reset":
-            self.closed.set()
-            return
-        if frame.kind == "response":
-            if frame.value.status >= 400:
-                log.warning("/chat/subscribe refused: HTTP %d", frame.value.status)
-                self.closed.set()
-                return
-            data, ended = frame.value.body, frame.value.end_body
-        else:
-            data, ended = frame.value.data, frame.value.end_body
-        self._buffer += data
-        *lines, self._buffer = self._buffer.split(b"\\n")
-        if len(self._buffer) > MAX_EVENT_LINE:
-            log.warning("/chat/subscribe line too long; closing the stream")
-            self.closed.set()
-            return
-        for line in lines:
-            event = parse_chat_event(line) if line.strip() else None
-            if event is None:
-                continue
-            key = (event["event"], event["seq"], event["message_id"])
-            if event["seq"] is not None and key in self._seen:
-                continue
-            self._seen.append(key)
-            self._sink(event)
-        if ended:
-            self.closed.set()
-
-
-class _NoRequest:
+@dataclass
+class Service:
 ''',
-    ),
-]
-
-SERVICE_PATCHES = [
-    (
-        "MAX_LOCAL_REQUEST = 64 * 1024\n",
-        "MAX_LOCAL_REQUEST = 64 * 1024\nSTREAM_WAIT_S = 660\nSTREAM_QUIET_S = 15\n",
     ),
     (
         """    async def _handle_local(self, reader, writer) -> None:
@@ -292,11 +150,11 @@ SERVICE_PATCHES = [
         no early event is missed; events are buffered until the chat ack
         names our note, then only events from our message.user on are
         forwarded (history replayed on subscribe is dropped). The stream
-        ends when ReplyTracker sees the reply complete, the subscription
-        closes, or STREAM_WAIT_S elapses.
+        ends when _ReplyTracker sees the reply complete, the subscription
+        ends, or STREAM_WAIT_S elapses. A subscription that fails or ends
+        early never fails the turn: the result line still goes out and
+        the shim falls back to its file drop.
         \"\"\"
-        from musegadget.link_client import ReplyTracker
-
         request = json.loads(line)
         message = request.get("message") if isinstance(request, dict) else None
         if not isinstance(message, str) or not message.strip():
@@ -321,8 +179,26 @@ SERVICE_PATCHES = [
         log.info("forwarding a %d-character message to the Muse (subscribed)",
                  len(message))
         events: asyncio.Queue = asyncio.Queue()
-        subscription = await session.subscribe(session_id, events.put_nowait)
-        tracker = ReplyTracker()
+        seen: collections.deque = collections.deque(maxlen=256)
+
+        async def pump() -> None:
+            try:
+                async for row in session.subscribe_chat(session_id):
+                    event = _flatten_chat_event(row)
+                    if event is None:
+                        continue
+                    key = (event["event"], event["seq"], event["message_id"])
+                    if event["seq"] is not None and key in seen:
+                        continue
+                    seen.append(key)
+                    events.put_nowait(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("chat subscription ended early: %s", exc)
+
+        pump_task = asyncio.ensure_future(pump())
+        tracker = _ReplyTracker()
         buffered: list[dict] = []
         result: dict | None = None
         forwarding = False
@@ -378,7 +254,7 @@ SERVICE_PATCHES = [
                         if tracker.feed(past):
                             done = True
                             break
-                if subscription.closed.is_set() and events.empty() and post.done():
+                if pump_task.done() and events.empty() and post.done():
                     break
                 if post.done() and time.monotonic() - last_event > STREAM_QUIET_S:
                     break
@@ -389,7 +265,11 @@ SERVICE_PATCHES = [
                     post.cancel()
                     result = {"ok": False, "error": "subscribe wait timed out"}
         finally:
-            await session.close_subscription(subscription)
+            pump_task.cancel()
+            try:
+                await pump_task
+            except asyncio.CancelledError:
+                pass
         writer.write(json.dumps(result).encode() + b"\\n")
         await writer.drain()
 """,
@@ -416,9 +296,7 @@ def main() -> None:
         package_dirs = glob.glob("/opt/musegadget/venv/lib/python3.*/site-packages/musegadget")
     if len(package_dirs) != 1:
         sys.exit(f"musegadget package dir not found uniquely: {package_dirs}")
-    base = package_dirs[0]
-    patch_file(f"{base}/link_client.py", LINK_PATCHES)
-    patch_file(f"{base}/service.py", SERVICE_PATCHES)
+    patch_file(f"{package_dirs[0]}/service.py", SERVICE_PATCHES)
 
 
 if __name__ == "__main__":

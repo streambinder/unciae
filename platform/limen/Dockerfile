@@ -12,7 +12,7 @@
 FROM docker.io/library/debian:bookworm-slim
 
 # Pinned upstream commit of facebookincubator/muse-gadget-sdk.
-ARG MUSEGADGET_COMMIT=b139b45064b4dcecf7bfe97e75bc7f99c10c28b6
+ARG MUSEGADGET_COMMIT=4268880f4bf3e9c736c08ea5efeac6f628fe6f97
 
 # python3-dbus / python3-gi / python3-cryptography come from the distro,
 # exactly like the upstream installer does on Debian/Raspberry Pi OS.
@@ -47,12 +47,11 @@ RUN useradd --create-home --uid 10001 gadget \
 COPY patch_network.py /tmp/patch_network.py
 RUN python3 /tmp/patch_network.py && rm /tmp/patch_network.py
 
-# Patch: add POST /chat/subscribe streaming to the SDK (event stream for
-# replies; upstream implements it only in the ESP32 firmware).
+# Patch: stream replies over POST /chat/subscribe on the local socket
+# (the SDK speaks the subscription itself; its socket stays one-shot).
 COPY patch_subscribe.py /tmp/patch_subscribe.py
 RUN python3 /tmp/patch_subscribe.py \
-    && grep -n 'SUBSCRIBE_PATH\|_local_stream_request' \
-        /opt/musegadget/venv/lib/python3.11/site-packages/musegadget/link_client.py \
+    && grep -n '_local_stream_request\|subscribe_chat' \
         /opt/musegadget/venv/lib/python3.11/site-packages/musegadget/service.py \
     && rm /tmp/patch_subscribe.py
 

@@ -7,7 +7,7 @@ import (
 	"log"
 	"math/big"
 
-	spotitube "github.com/streambinder/spotitube/spotify"
+	pango "github.com/streambinder/pango/spotify"
 	spotify "github.com/zmb3/spotify/v2"
 )
 
@@ -23,7 +23,7 @@ func main() {
 		log.Fatal("At least a Spotify playlist URI is needed")
 	}
 
-	client, err := spotitube.Authenticate(spotitube.BrowserProcessor)
+	client, err := pango.Authenticate(pango.BrowserProcessor)
 	if err != nil {
 		log.Fatal(err)
 	}

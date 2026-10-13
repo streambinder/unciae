@@ -1,6 +1,6 @@
 """Three-tier TUI line manager.
 
-Port of github.com/streambinder/spotitube/sys/anchor.
+Port of github.com/streambinder/pango/sys/anchor.
 
 Three line categories layered in a terminal window, bottom-anchored stack:
 

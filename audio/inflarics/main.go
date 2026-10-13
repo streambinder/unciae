@@ -11,9 +11,9 @@ import (
 	"github.com/bogem/id3v2/v2"
 	"github.com/gosimple/slug"
 	"github.com/spf13/cobra"
-	"github.com/streambinder/spotitube/entity"
-	"github.com/streambinder/spotitube/lyrics"
-	"github.com/streambinder/spotitube/sys"
+	"github.com/streambinder/pango/entity"
+	"github.com/streambinder/pango/lyrics"
+	"github.com/streambinder/pango/sys"
 )
 
 func main() {

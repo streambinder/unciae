@@ -1,4 +1,4 @@
-"""Tests mirror spotitube/sys/anchor/window_test.go.
+"""Tests mirror pango/sys/anchor/window_test.go.
 
 Output stream redirected to StringIO; stdin patched for `reads`. Assertions
 check substrings — exact ANSI sequences differ between go's `cursor` lib and

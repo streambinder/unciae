@@ -61,9 +61,10 @@ master push, false on PR.
 
 ### 3.3 Config Location
 
-All super-linter configs live under `.github/linters/`. Tools that demand root:
-keep canonical in `.github/linters/`, symlink from root
-(`ln -sf .github/linters/...`). Never duplicate.
+All super-linter configs live under `.github/linters/`. A linter config is
+never committed at the repository root, not even as a symlink. If a tool
+requires its config at the root, the CI workflow links or copies it there
+during the run only. Never duplicate.
 
 ## 4. CI paths-filter (multi-component only)
 

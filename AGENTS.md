@@ -21,10 +21,16 @@ when explicitly documented.
   - `Readme.md` → `.github/README.md`
   - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, templates → `.github/`
   - Configs → `.config/`, `tools/` or language native
-- Allowed at root: `LICENSE`, `.gitignore`, `AGENTS.md`, manifests
+- Allowed at root: `LICENSE`, `.gitignore`, manifests
   (`go.mod`, `package.json`, `pyproject.toml`, `pubspec.yaml`),
-  `.editorconfig`, `.github/`.
+  `.github/`.
 - > ~8 visible entries → propose move.
+- `AGENTS.md` lives only in this repository, as the single canonical
+  standard. Other repositories carry no `AGENTS.md`: a specialized
+  copy drifts from the standard. One exception: `oilercorp/*`, whose
+  `AGENTS.md` serves its human team, not the standard reader.
+- `.editorconfig` is not committed. Editor configuration is a local
+  property of the checkout of the contributor, not of the repository.
 
 ## 3. Linting — super-linter
 

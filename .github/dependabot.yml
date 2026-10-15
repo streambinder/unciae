@@ -19,6 +19,7 @@ updates:
   - package-ecosystem: "uv"
     directories:
       - "/backup/restup"
+      - "/music/conscribo"
       - "/media/immich"
       - "/media/immich-album-assets"
       - "/media/immich-prune-trash"

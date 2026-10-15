@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "conscribo"
+version = "0.1.0"
+description = "Download a MuseScore sheet as a PDF file of vector pages"
+requires-python = ">=3.13"
+license = { text = "GPL-3.0-or-later" }
+dependencies = ["cairosvg", "pypdf"]
+
+[dependency-groups]
+dev = ["mypy", "pytest", "pytest-cov"]
+
+[tool.hatch.build.targets.wheel]
+packages = []
+force-include = { "main.py" = "conscribo/main.py" }
+
+[tool.mypy]
+strict = true
+files = ["main.py"]
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-fail-under=90 --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["test_*.py"]

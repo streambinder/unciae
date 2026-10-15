@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
-import urllib.error
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 import main
+import pymupdf
 import pytest
-from pypdf import PdfReader
 
 SCORE_URL = "https://musescore.com/user/19710/scores/4766391"
 SCORE_ID = "4766391"
@@ -21,17 +19,8 @@ TINY_SVG = (
 )
 
 
-def cairo_available() -> bool:
-    try:
-        main.page_pdf(TINY_SVG)
-    except OSError:
-        return False
-    return True
-
-
-requires_cairo = pytest.mark.skipif(
-    not cairo_available(), reason="system cairo library not available"
-)
+def page_count(pdf: bytes) -> int:
+    return len(pymupdf.open(stream=pdf, filetype="pdf"))
 
 
 def jmuse_body(signed_url: str) -> bytes:
@@ -148,22 +137,19 @@ def test_download_pages_raises_on_fetch_error() -> None:
         main.download_pages(session, SCORE_URL)
 
 
-@requires_cairo
 def test_page_pdf_renders_a_pdf() -> None:
     assert main.page_pdf(TINY_SVG).startswith(b"%PDF")
 
 
-@requires_cairo
 def test_assemble_pdf_merges_pages() -> None:
     merged = main.assemble_pdf([TINY_SVG, TINY_SVG])
-    assert len(PdfReader(io.BytesIO(merged)).pages) == 2
+    assert page_count(merged) == 2
 
 
-@requires_cairo
 def test_run_writes_the_pdf(tmp_path: Path) -> None:
     output = tmp_path / "sheet.pdf"
     assert main.run(SCORE_URL, output, two_page_session()) == 0
-    assert len(PdfReader(io.BytesIO(output.read_bytes())).pages) == 2
+    assert page_count(output.read_bytes()) == 2
 
 
 def test_run_raises_when_the_page_fetch_fails() -> None:
@@ -172,7 +158,6 @@ def test_run_raises_when_the_page_fetch_fails() -> None:
         main.run(SCORE_URL, Path("unused.pdf"), session)
 
 
-@requires_cairo
 def test_main_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(main, "HttpSession", two_page_session)
@@ -189,47 +174,44 @@ def test_main_reports_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     assert main.main(["https://musescore.com/"]) == 1
 
 
-class StubResponse:
-    """A minimal stand-in for an urllib response."""
+class StubTransportResponse:
+    """A minimal stand-in for a transport response."""
 
-    def __init__(self, status: int, body: bytes) -> None:
-        self.status = status
-        self._body = body
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return self._body
+    def __init__(self, status_code: int, content: bytes) -> None:
+        self.status_code = status_code
+        self.content = content
 
 
-class StubOpener:
-    """An opener that returns a canned response or raises a canned error."""
+class StubTransportSession:
+    """A transport session that returns a canned response or raises."""
 
-    def __init__(self, outcome: StubResponse | urllib.error.HTTPError) -> None:
+    def __init__(self, outcome: StubTransportResponse | Exception) -> None:
         self.outcome = outcome
 
-    def open(self, _request: Any, timeout: int = 0) -> StubResponse:
+    def get(self, _url: str, headers: Any = None, timeout: int = 0) -> StubTransportResponse:
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
 
 
 def stub_session(monkeypatch: pytest.MonkeyPatch, outcome: Any) -> main.HttpSession:
-    opener = StubOpener(outcome)
-    monkeypatch.setattr(main.urllib.request, "build_opener", lambda *_args: opener)
+    transport = StubTransportSession(outcome)
+    monkeypatch.setattr(main.requests, "Session", lambda **_kwargs: transport)
     return main.HttpSession()
 
 
 def test_http_session_get_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = stub_session(monkeypatch, StubResponse(200, b"body"))
+    session = stub_session(monkeypatch, StubTransportResponse(200, b"body"))
     assert session.get("https://example.com") == (200, b"body")
 
 
 def test_http_session_get_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    error = urllib.error.HTTPError("https://example.com", 404, "missing", {}, io.BytesIO(b"nope"))
-    session = stub_session(monkeypatch, error)
+    session = stub_session(monkeypatch, StubTransportResponse(404, b"nope"))
     assert session.get("https://example.com") == (404, b"nope")
+
+
+def test_http_session_get_request_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    failure = main.requests.exceptions.RequestException("boom")
+    session = stub_session(monkeypatch, failure)
+    with pytest.raises(main.ConscriboError):
+        session.get("https://example.com")

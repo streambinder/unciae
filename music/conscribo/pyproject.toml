@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Download a MuseScore sheet as a PDF file of vector pages"
 requires-python = ">=3.13"
 license = { text = "GPL-3.0-or-later" }
-dependencies = ["cairosvg", "pypdf"]
+dependencies = ["curl-cffi", "pymupdf"]
 
 [dependency-groups]
 dev = ["mypy", "pytest", "pytest-cov"]

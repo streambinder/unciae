@@ -5,23 +5,16 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import http.cookiejar
-import io
 import json
 import re
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Protocol
 
-from pypdf import PdfReader, PdfWriter
+import pymupdf
+from curl_cffi import requests
 
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
 JMUSE_URL = "https://musescore.com/api/jmuse"
 # the site client signs every jmuse call with the first four hex digits of
 # the md5 of score id, type, page index and this fixed suffix, concatenated;
@@ -30,10 +23,9 @@ SIGNING_SUFFIX = ",%!),"
 RETRYABLE_API_STATUS = 422
 MAX_RETRIES = 3
 RETRY_DELAY_S = 2.0
-# cairosvg sizes output in css pixels at 96 dpi: 794x1123 px is A4, and
-# the pdf page size follows as 595.5x842.25 pt
-A4_WIDTH_PX = 794
-A4_HEIGHT_PX = 1123
+# A4 in pdf points
+A4_WIDTH_PT = 595.28
+A4_HEIGHT_PT = 841.89
 TRAILING_ID_RE = re.compile(r"(\d+)/?$")
 
 
@@ -50,19 +42,21 @@ class Session(Protocol):
 
 
 class HttpSession:
-    """A session that keeps the cookies the site sets on the first fetch."""
+    """A session that keeps the cookies the site sets on the first fetch.
+
+    The transport impersonates the Chrome network fingerprint. The site
+    refuses plain HTTP clients from some networks on fingerprint alone.
+    """
 
     def __init__(self) -> None:
-        jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        self._session = requests.Session(impersonate="chrome")
 
     def get(self, url: str, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
         try:
-            with self._opener.open(request, timeout=30) as response:
-                return response.status, response.read()
-        except urllib.error.HTTPError as error:
-            return error.code, error.read()
+            response = self._session.get(url, headers=headers, timeout=30)
+        except requests.exceptions.RequestException as error:
+            raise ConscriboError(f"request failed: {error}") from error
+        return response.status_code, response.content
 
 
 def score_id(url: str) -> str:
@@ -133,27 +127,21 @@ def download_pages(session: Session, page_url: str) -> list[bytes]:
     return pages
 
 
-def page_pdf(svg: bytes) -> bytes:
-    """Render one SVG page to a one-page A4 PDF."""
-    # the import is lazy: cairosvg loads the system cairo library at import
-    # time, and the fetch logic of this module must not depend on that library
-    import cairosvg  # type: ignore[import-untyped]
-
-    return bytes(
-        cairosvg.svg2pdf(bytestring=svg, output_width=A4_WIDTH_PX, output_height=A4_HEIGHT_PX)
-    )
-
-
 def assemble_pdf(pages: list[bytes]) -> bytes:
     """Assemble SVG pages into one PDF document, in sheet order."""
-    writer = PdfWriter()
-    for page in pages:
-        reader = PdfReader(io.BytesIO(page_pdf(page)))
-        for rendered in reader.pages:
-            writer.add_page(rendered)
-    output = io.BytesIO()
-    writer.write(output)
-    return output.getvalue()
+    # pymupdf ships partial type information: the document calls are untyped
+    output = pymupdf.open()  # type: ignore[no-untyped-call]
+    for svg in pages:
+        source = pymupdf.open(stream=svg, filetype="svg")  # type: ignore[no-untyped-call]
+        inner = pymupdf.open("pdf", source.convert_to_pdf())  # type: ignore[no-untyped-call]
+        page = output.new_page(width=A4_WIDTH_PT, height=A4_HEIGHT_PT)
+        page.show_pdf_page(page.rect, inner, 0)
+    return output.tobytes()  # type: ignore[no-any-return, no-untyped-call]
+
+
+def page_pdf(svg: bytes) -> bytes:
+    """Render one SVG page to a one-page A4 PDF."""
+    return assemble_pdf([svg])
 
 
 def run(url: str, output: Path, session: Session) -> int:

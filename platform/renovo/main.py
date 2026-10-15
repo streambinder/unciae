@@ -27,6 +27,10 @@ DepFn = Callable[[Window], Coroutine[Any, Any, None]]
 
 DEP_FNS: set[DepFn] = set()
 
+# per-program verdict of the current run, filled by the dep wrapper and read
+# by the command to compute the aggregate result and the process exit code
+OUTCOMES: dict[str, str] = {}
+
 
 _cached_pass: str | None = None
 
@@ -97,20 +101,16 @@ async def terminate(process: asyncio.subprocess.Process) -> None:
 
 
 async def stream_to_lot(stream: asyncio.StreamReader, lot: Lot) -> None:
+    # both child streams are narration: stdout carries the product, stderr
+    # carries progress, warnings and errors mixed. neither is an alarm, so
+    # both land in the program lot; the sticky red anchor tier is reserved
+    # for verdicts (non-zero exit, exception, final summary). routing stderr
+    # to the anchor painted every progress line red and grew the sticky
+    # block without bound.
     while line := await stream.readline():
         decoded = line.decode().rstrip()
         if decoded:
             lot.print(decoded)
-
-
-async def stream_to_anchor(
-    stream: asyncio.StreamReader, lot: Lot, window: Window, program: str
-) -> None:
-    while line := await stream.readline():
-        decoded = line.decode().rstrip()
-        if decoded:
-            lot.print(decoded)
-            window.anchor_printf(f"{program}: {decoded}")
 
 
 @contextmanager
@@ -147,6 +147,7 @@ def dep(
         async def wrapper_dep(window: Window) -> None:
             if not (valid_cmd and valid_os and valid_env):
                 window.printf(f"{program} is unsupported")
+                OUTCOMES[program] = "unsupported"
                 return
 
             lot = window.lot(program)
@@ -163,7 +164,7 @@ def dep(
                         try:
                             await asyncio.gather(
                                 stream_to_lot(process.stdout, lot),
-                                stream_to_anchor(process.stderr, lot, window, program),
+                                stream_to_lot(process.stderr, lot),
                             )
                         finally:
                             # ctrl+c cancels us mid-gather: the child keeps running
@@ -175,13 +176,16 @@ def dep(
                                 f"{program}: exited with code {process.returncode}"
                             )
                             lot.close("failed")
+                            OUTCOMES[program] = "failed"
                             return
             except Exception as exc:  # noqa: BLE001
-                # logic/runtime errors share the sticky error tier with stderr
+                # verdicts belong to the sticky error tier; child output does not
                 window.anchor_printf(f"{program}: {exc}")
                 lot.close("raised")
+                OUTCOMES[program] = "raised"
                 return
             lot.close("upgraded")
+            OUTCOMES[program] = "upgraded"
 
         wrapped = cast(DepFn, wrapper_dep)
         DEP_FNS.add(wrapped)
@@ -299,6 +303,8 @@ async def renovo(anchor: bool | None) -> None:
     if needs_sudo and not await verify_sudo():
         return
 
+    OUTCOMES.clear()
+    exit_code = 0
     with Window(Red) as window:
         if anchor is False or (anchor is None and not sys.stdout.isatty()):
             window.enable_plain_mode()
@@ -327,8 +333,10 @@ async def renovo(anchor: bool | None) -> None:
         task = asyncio.ensure_future(guarded())
         for signame in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(signame, task.cancel)
+        completed = False
         try:
             await task
+            completed = True
         except asyncio.CancelledError:
             # interrupted: the dep tasks' finally already killed their process
             # groups on the way out. close(interrupted) freezes whatever lots are
@@ -337,6 +345,17 @@ async def renovo(anchor: bool | None) -> None:
         finally:
             for signame in (signal.SIGINT, signal.SIGTERM):
                 loop.remove_signal_handler(signame)
+
+        if completed:
+            # aggregate verdict: the exit code is the failure signal, the
+            # anchored summary names the failed upgrades in the error tier
+            failed = sorted(p for p, outcome in OUTCOMES.items() if outcome in {"failed", "raised"})
+            if failed:
+                window.anchor_printf(f"renovo: failed upgrades: {', '.join(failed)}")
+                exit_code = 1
+
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

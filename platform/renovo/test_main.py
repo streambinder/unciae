@@ -77,6 +77,7 @@ class FakeWindow:
 def _registry(monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = set(main.DEP_FNS)
     FakeWindow.instances = []
+    main.OUTCOMES.clear()
     monkeypatch.setattr(main, "_cached_pass", None)
     yield
     main.DEP_FNS.clear()
@@ -191,13 +192,20 @@ def test_stream_to_lot_skips_blank_lines() -> None:
     assert lot.messages == ["one", " two"]
 
 
-def test_stream_to_anchor_reports_lines() -> None:
-    lot = FakeLot("job")
+def test_dep_stderr_is_narration_not_anchor() -> None:
+    @main.dep(cmd="sh")
+    async def errtool() -> AsyncGenerator[Any, None]:
+        yield ["sh", "-c", "echo progress >&2; echo result"], {}
+
     window = FakeWindow()
-    stream = FakeStream([b"warn\n", b"\n"])
-    run(main.stream_to_anchor(stream, lot, window, "prog"))  # type: ignore[arg-type]
-    assert lot.messages == ["warn"]
-    assert window.anchored == ["prog: warn"]
+    run(errtool(window))  # type: ignore[arg-type]
+    lot = window.lots["errtool"]
+    # stderr narration lands in the lot like stdout; the sticky error tier
+    # stays empty because the verdict is a success
+    assert "progress" in lot.messages
+    assert "result" in lot.messages
+    assert window.anchored == []
+    assert main.OUTCOMES["errtool"] == "upgraded"
 
 
 def test_askpass_helper_lifecycle() -> None:
@@ -224,6 +232,7 @@ def test_dep_unsupported_platform() -> None:
     window = FakeWindow()
     run(plan9tool(window))  # type: ignore[arg-type]
     assert window.printed == ["plan9tool is unsupported"]
+    assert main.OUTCOMES["plan9tool"] == "unsupported"
 
 
 def test_dep_missing_env() -> None:
@@ -285,6 +294,7 @@ def test_dep_sudo_inserts_askpass_flag_and_reports_failure(
     assert spawned == [["sudo", "-A", "tool", "arg"]]
     assert window.lots["sudotool"].closed_with == "failed"
     assert any("exited with code 3" in line for line in window.anchored)
+    assert main.OUTCOMES["sudotool"] == "failed"
 
 
 def test_dep_spawn_returning_none_still_upgrades(
@@ -314,6 +324,7 @@ def test_dep_exception_closes_lot_as_raised() -> None:
     run(raisetool(window))  # type: ignore[arg-type]
     assert window.lots["raisetool"].closed_with == "raised"
     assert any("boom" in line for line in window.anchored)
+    assert main.OUTCOMES["raisetool"] == "raised"
 
 
 # bundled dep generators
@@ -477,6 +488,43 @@ def test_command_aborts_when_sudo_verification_fails(
     run(main.renovo.callback(True))
     assert ran == []
     assert FakeWindow.instances == []
+
+
+def test_command_exits_nonzero_and_summarizes_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_spawn(*args: Any, **kwargs: Any) -> _StubProc:
+        return _StubProc(returncode=3)
+
+    monkeypatch.setattr(main, "spawn", fake_spawn)
+
+    @main.dep(cmd="sh")
+    async def failtool() -> AsyncGenerator[Any, None]:
+        yield ["sh", "-c", "false"], {}
+
+    monkeypatch.setattr(main, "Window", FakeWindow)
+    monkeypatch.setattr(main, "DEP_FNS", {failtool})
+    monkeypatch.setattr(main, "is_sudo_required", _no_sudo)
+    with pytest.raises(SystemExit) as excinfo:
+        run(main.renovo.callback(True))
+    assert excinfo.value.code == 1
+    anchored = FakeWindow.instances[0].anchored
+    assert any("renovo: failed upgrades: failtool" in line for line in anchored)
+
+
+def test_command_exits_zero_when_all_deps_upgrade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    @main.dep(cmd="sh")
+    async def okttool() -> AsyncGenerator[Any, None]:
+        yield ["sh", "-c", "true"], {}
+
+    monkeypatch.setattr(main, "Window", FakeWindow)
+    monkeypatch.setattr(main, "DEP_FNS", {okttool})
+    monkeypatch.setattr(main, "is_sudo_required", _no_sudo)
+    run(main.renovo.callback(True))
+    assert main.OUTCOMES["okttool"] == "upgraded"
+    assert FakeWindow.instances[0].anchored == []
 
 
 def test_command_with_verified_sudo_uses_askpass(

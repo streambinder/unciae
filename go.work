@@ -5,5 +5,5 @@ toolchain go1.26.8
 use (
 	./ai/ianua
 	./audio/inflarics
-	./audio/pluffer
+	./music/pluffer
 )

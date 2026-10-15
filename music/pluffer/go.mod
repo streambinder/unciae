@@ -1,4 +1,4 @@
-module github.com/streambinder/unciae/audio/pluffer
+module github.com/streambinder/unciae/music/pluffer
 
 go 1.26.2
 

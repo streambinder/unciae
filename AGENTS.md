@@ -368,3 +368,18 @@ Code and configuration must read as if one hand wrote the file.
   compactness second.
 - A change follows the conventions of the file that the change touches.
   Do not reformat parts that the change does not touch.
+
+## 24. Verification Subjects
+
+A change is often verified against real subjects: real people, real
+accounts, real services, real data.
+
+- Commit messages and pull request descriptions must not name a
+  verification subject.
+- Do not include the name, the handle, the email address, the domain,
+  the profile URL, or any other identifier of a verification subject.
+- Describe the verification in generic terms: the class of the subject
+  and the outcome of the verification.
+- The rule applies to public repositories and to private repositories.
+  Commit history is permanent, and a description is republished with
+  every mirror and fork.

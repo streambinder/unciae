@@ -383,3 +383,45 @@ accounts, real services, real data.
 - The rule applies to public repositories and to private repositories.
   Commit history is permanent, and a description is republished with
   every mirror and fork.
+
+## 25. Specification-Driven Development
+
+Every feature is specified before the feature is implemented. The
+specification, the plan, and the record of the work live in the
+repository. Each kind of information has one authoritative place.
+
+- A feature change runs a specification cycle. The cycle has six
+  steps: specify, plan, tasks, implement, verify, converge.
+- The specify step produces a specification. The specification states
+  what the feature does and why the feature exists. The specification
+  contains user stories, functional requirements, and success
+  criteria. The specification contains no implementation detail.
+- The plan step produces a technical plan. The plan shows how the
+  change satisfies this standard. The tasks step derives an ordered
+  task list from the plan.
+- The converge step closes the artifacts of the feature. A completed
+  feature directory is an immutable historical record.
+- The artifacts of a feature live in `specs/NNN-<short-name>/` at the
+  repository root. NNN is a zero-padded sequence number.
+- A significant decision goes to a decision register. The register
+  holds one file per decision, in MADR format. A decision is a draft
+  until the owner ratifies the decision. An accepted decision is
+  reused. A superseded decision stays in the register and names the
+  successor of the decision.
+- Each project carries a constitution. The constitution states the
+  rules that are specific to the project. The constitution derives
+  every other rule from this standard. This standard prevails when a
+  constitution and this standard conflict.
+- Adoption of this section is complete only under one condition. A
+  new session resumes the work from the repository files alone. The
+  session completes a scoped change and shows the verifications of
+  the change.
+- The cycle binds feature changes and changes to the domain model. A
+  bugfix and a small change do not run the cycle. The body of the
+  pull request states the rationale of the fix or of the change.
+- A project adopts this section at creation. An existing project
+  adopts this section at the next feature change of the project.
+- GitHub Spec Kit is the reference implementation of this section.
+  Lint excludes the files that the tool manages, through targeted
+  rules only. Nobody edits a managed file by hand. A project that
+  replaces the tool records the replacement as a decision.

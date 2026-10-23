@@ -396,6 +396,18 @@ repository. Each kind of information has one authoritative place.
   what the feature does and why the feature exists. The specification
   contains user stories, functional requirements, and success
   criteria. The specification contains no implementation detail.
+- A feature request is a hypothesis. The specify step opens with
+  an investigation of the hypothesis on real data.
+- The investigation verifies that the problem exists. The
+  investigation verifies that the assumed cause holds. The
+  investigation looks for a simpler alternative.
+- The investigation has three outcomes: specify the feature as
+  proposed, specify a different solution, or abandon the feature.
+  Abandonment closes the cycle before the plan step.
+- The decision register records the outcome of the investigation
+  and the evidence of the investigation. The specification is a
+  draft until the owner ratifies the specification. The plan step
+  starts after the ratification of the specification.
 - The plan step produces a technical plan. The plan shows how the
   change satisfies this standard. The tasks step derives an ordered
   task list from the plan.

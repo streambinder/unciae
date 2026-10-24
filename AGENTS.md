@@ -192,6 +192,8 @@ Respect idiomatic layout, do not force `src/` everywhere.
 - Primary: `master`, never assume `main`
 - Feature branches: `feat/<short-name>` (covers fix/chore/docs too)
 - Signed commits always, `pull.rebase = true`
+- Merge a pull request with the rebase and merge method. Never
+  create a merge commit.
 - Tags `vMAJOR.MINOR.PATCH` SemVer, no `v0` perpetual
 - `push.yml` on branch pushes only (never `pull_request`), `tag.yml` on `v*` creates release
 - No CHANGELOG file, use GitHub auto notes.

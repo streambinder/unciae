@@ -12,7 +12,7 @@
 FROM docker.io/library/debian:bookworm-slim
 
 # Pinned upstream commit of facebookincubator/muse-gadget-sdk.
-ARG MUSEGADGET_COMMIT=4268880f4bf3e9c736c08ea5efeac6f628fe6f97
+ARG MUSEGADGET_COMMIT=729d0c8b3113c0cdbd7efb3b8aad8a313839a1bd
 
 # python3-dbus / python3-gi / python3-cryptography come from the distro,
 # exactly like the upstream installer does on Debian/Raspberry Pi OS.

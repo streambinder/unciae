@@ -435,6 +435,15 @@ repository. Each kind of information has one authoritative place.
   pull request states the rationale of the fix or of the change.
 - A project adopts this section at creation. An existing project
   adopts this section at the next feature change of the project.
+- A pull request of the cycle holds one commit or more. One
+  commit stays the preference.
+- Each file the pull request changes appears in exactly one
+  commit of the pull request.
+- A specification pull request holds one commit.
+- An implementation pull request holds one commit per plan
+  phase. A small change holds one commit.
+- A fix to a commit amends that commit. The fix never opens a
+  new commit.
 - GitHub Spec Kit is the reference implementation of this section.
   Lint excludes the files that the tool manages, through targeted
   rules only. Nobody edits a managed file by hand. A project that

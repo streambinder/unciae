@@ -26,12 +26,15 @@ import sys
 
 SERVICE_PATCHES = [
     (
-        "import asyncio\nimport json\n",
-        "import asyncio\nimport collections\nimport json\n",
+        "import asyncio\nimport base64\nimport json\n",
+        "import asyncio\nimport collections\nimport base64\nimport json\n",
     ),
     (
-        "MAX_LOCAL_REQUEST = 64 * 1024\n",
-        "MAX_LOCAL_REQUEST = 64 * 1024\nSTREAM_WAIT_S = 660\nSTREAM_QUIET_S = 15\n",
+        "MAX_LOCAL_REQUEST = 4 * 1024 * 1024  # room for a 2 MiB image in base64\n",
+        (
+            "MAX_LOCAL_REQUEST = 4 * 1024 * 1024  # room for a 2 MiB image in base64\n"
+            "STREAM_WAIT_S = 660\nSTREAM_QUIET_S = 15\n"
+        ),
     ),
     (
         "@dataclass\nclass Service:\n",
@@ -107,29 +110,51 @@ class Service:
     ),
     (
         """    async def _handle_local(self, reader, writer) -> None:
+        too_long = False
         try:
-            line = await asyncio.wait_for(reader.readline(), 10)
-            reply = await self._local_request(line)
+            try:
+                line = await asyncio.wait_for(reader.readline(), 10)
+            except ValueError:  # the line is over the stream limit
+                too_long = True
+                reply = {"ok": False,
+                         "error": f"the request is over {MAX_LOCAL_REQUEST // (1024 * 1024)} MiB"}
+            else:
+                reply = await self._local_request(line)
         except Exception as exc:
             reply = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         writer.write(json.dumps(reply).encode() + b"\\n")
         try:
             await writer.drain()
+            if too_long:
+                # Closing with unread input resets the connection, which can
+                # lose the reply before the sender reads it.
+                await _discard_line(reader)
         finally:
             writer.close()
 """,
         """    async def _handle_local(self, reader, writer) -> None:
+        too_long = False
         try:
-            line = await asyncio.wait_for(reader.readline(), 10)
-            if self._wants_subscribe(line):
-                await self._local_stream_request(line, writer)
-                return
-            reply = await self._local_request(line)
+            try:
+                line = await asyncio.wait_for(reader.readline(), 10)
+            except ValueError:  # the line is over the stream limit
+                too_long = True
+                reply = {"ok": False,
+                         "error": f"the request is over {MAX_LOCAL_REQUEST // (1024 * 1024)} MiB"}
+            else:
+                if self._wants_subscribe(line):
+                    await self._local_stream_request(line, writer)
+                    return
+                reply = await self._local_request(line)
         except Exception as exc:
             reply = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         writer.write(json.dumps(reply).encode() + b"\\n")
         try:
             await writer.drain()
+            if too_long:
+                # Closing with unread input resets the connection, which can
+                # lose the reply before the sender reads it.
+                await _discard_line(reader)
         finally:
             writer.close()
 

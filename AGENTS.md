@@ -242,6 +242,18 @@ concurrency:
 `tag.yml`: group `${{github.workflow}}-${{github.ref_name}}`,
 `cancel-in-progress: false`.
 
+### 11.3 Master runs run everything
+
+Path filtering (section 4) applies to branch pushes only. A push run on
+`refs/heads/master` runs every job: tests, linters, builds, and
+publication gates. Never gate a job on a path diff on master.
+
+A path diff against the previous commit sees only the top commit of a
+rebased stack. A stack topped by a docs-only commit then reports
+success while it built nothing, published nothing, and deployed
+nothing. The master run is the safety net for merged trees: a green
+master run must mean the tree was built, tested, and published.
+
 ## 12. Python Standard
 
 All Python projects: `pyproject.toml` only, no

@@ -215,3 +215,26 @@ def test_local_stream_request_rejects_missing_message(patched_sdk):
     assert patched_sdk.Service._wants_subscribe(b'{"subscribe": true}')
     assert not patched_sdk.Service._wants_subscribe(b'{"message": "x"}')
     assert not patched_sdk.Service._wants_subscribe(b"not json")
+
+
+def test_local_stream_request_listen_forwards_without_sending(patched_sdk):
+    svc = object.__new__(patched_sdk.Service)
+    session = _FakeSession()
+    svc._current = session
+    writer = _FakeWriter()
+    line = json.dumps({"session_id": "chat-1", "subscribe": True, "listen": True}).encode()
+    asyncio.run(svc._local_stream_request(line, writer))
+    assert session.sent is None
+    objs = [json.loads(data) for data in writer.lines]
+    events = [o["event"] for o in objs if "event" in o]
+    results = [o for o in objs if "event" not in o]
+    # Listen mode forwards everything, including replayed history.
+    assert [e["event"] for e in events] == [
+        "message.assistant",
+        "message.user",
+        "delta.text_append",
+        "delta.text_append",
+        "delta.message_done",
+    ]
+    assert results == [{"ok": True}]
+    assert objs[-1] is results[0]

@@ -283,6 +283,28 @@ def test_iter_muse_stream_ends_on_close_without_result(monkeypatch, tmp_path):
     assert [kind for kind, _ in results] == ["event"]
 
 
+def test_translator_follow_mode_restarts_on_each_user_event():
+    translator = shim.StreamTranslator(follow=True)
+    assert translator.feed(event("message.user", "n0")) == ""
+    assert translator.feed(event("delta.text_append", "a0", "old")) == "old"
+    assert translator.feed(event("delta.message_done", "a0", "old")) == ""
+    assert translator.feed(event("message.user", "n1")) == ""
+    assert translator.feed(event("delta.text_append", "a1", "new")) == "new"
+
+
+def test_iter_muse_listen_sends_listen_request(monkeypatch, tmp_path):
+    lines = [
+        json.dumps({"event": event("message.user", "n1")}).encode() + b"\n",
+        json.dumps({"ok": True}).encode() + b"\n",
+    ]
+    received = []
+    path = _unix_server(tmp_path, lines, received)
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    results = list(shim.iter_muse_listen("s"))
+    assert [kind for kind, _ in results] == ["event", "result"]
+    assert json.loads(received[0]) == {"session_id": "s", "subscribe": True, "listen": True}
+
+
 # HTTP handler
 
 
@@ -602,6 +624,52 @@ def test_stream_extracts_result_text_when_no_deltas(server, monkeypatch):
     status, _, raw = _stream_request(server, wait_reply=False)
     assert status == 200
     assert '"content": "whole reply"' in raw.decode()
+
+
+def _patch_listen(monkeypatch, items=None, error=None):
+    def fake_listen(session_id):
+        if error is not None:
+            raise error
+        yield from items or []
+
+    monkeypatch.setattr(shim, "iter_muse_listen", fake_listen)
+
+
+def test_stream_listen_only_observes_live_turn_without_drop(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop in listen mode")),
+    )
+    _patch_listen(
+        monkeypatch,
+        items=[
+            ("event", event("message.user", "n0")),
+            ("event", event("delta.text_append", "a0", "old")),
+            ("event", event("message.user", "n1")),
+            ("event", event("delta.text_append", "a1", "live")),
+            ("event", event("delta.message_done", "a1", "live")),
+            ("result", {"ok": True}),
+        ],
+    )
+    status, _, raw = _request(
+        server,
+        "POST",
+        "/v1/chat/completions",
+        body={"stream": True, "listen_only": True, "session_id": "sess-1"},
+    )
+    assert status == 200
+    text = raw.decode()
+    assert '"content": "live"' in text
+    assert "data: [DONE]" in text
+
+
+def test_listen_only_without_stream_is_400(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    status, _, raw = _request(server, "POST", "/v1/chat/completions", body={"listen_only": True})
+    assert status == 400
+    assert "listen_only requires stream" in raw.decode()
 
 
 def test_main_starts_server(monkeypatch, tmp_path):

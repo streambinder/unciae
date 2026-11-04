@@ -161,6 +161,31 @@ def test_translator_emits_deltas_with_unshared_message_ids():
     assert translator.done_text == "abcd"
 
 
+def nested_event(name, mid="", text="", key="text"):
+    # Live subscribe events nest their text under payload.
+    return {"event": name, "message_id": mid, "payload": {key: text}}
+
+
+def test_translator_reads_text_from_payload():
+    translator = shim.StreamTranslator()
+    translator.feed(event("message.user", "note-1"))
+    assert translator.feed(nested_event("delta.text_append", "a1", "ab")) == "ab"
+    assert translator.feed(nested_event("delta.text_append", "a2", "cd")) == "cd"
+    assert translator.feed(nested_event("delta.message_done", "a3", "abcd", "display_text")) == ""
+    assert translator.accumulated == "abcd"
+
+
+def test_translator_nested_done_text_used_when_no_deltas():
+    translator = shim.StreamTranslator()
+    translator.feed(event("message.user", "note-1"))
+    assert (
+        translator.feed(nested_event("delta.message_done", "a1", "full text", "display_text"))
+        == "full text"
+    )
+    assert translator.finished
+    assert translator.done_text == "full text"
+
+
 def test_translator_done_text_used_when_no_deltas():
     translator = shim.StreamTranslator()
     translator.feed(event("message.user", "note-1"))

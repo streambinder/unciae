@@ -219,9 +219,10 @@ def iter_muse_listen(session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
 
 
 class StreamTranslator:
-    """Turns flattened subscribe events into SSE delta texts.
+    """Turns subscribe events into SSE delta texts.
 
-    Correlation is by order: nothing is emitted before our turn's
+    Live events nest their text under payload; top-level text is
+    accepted too. Correlation is by order: nothing is emitted before our turn's
     message.user event (earlier events are history replayed when the
     subscription opened). The Linux server's delta events do not share
     one stable message id, so no id gating is applied: deltas are
@@ -239,7 +240,15 @@ class StreamTranslator:
     def feed(self, event: dict[str, Any]) -> str:
         """Return the text to emit as one SSE delta, or "" for none."""
         name = str(event.get("event") or "")
-        text = str(event.get("text") or "")
+        raw_payload = event.get("payload")
+        payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
+        text = str(
+            event.get("text")
+            or payload.get("text")
+            or payload.get("display_text")
+            or payload.get("content")
+            or ""
+        )
         if name == "message.user":
             if self.follow:
                 self.accumulated = ""

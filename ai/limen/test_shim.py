@@ -146,11 +146,24 @@ def test_translator_drops_history_before_our_user_event():
     assert translator.accumulated == "World"
 
 
-def test_translator_ignores_other_messages_and_uses_done_text_when_no_deltas():
+def test_translator_emits_deltas_with_unshared_message_ids():
+    # Regression: the Linux server's delta events do not share one
+    # message id across message_start, appends and done; gating on it
+    # dropped every live delta.
     translator = shim.StreamTranslator()
     translator.feed(event("message.user", "note-1"))
-    translator.feed(event("delta.message_start", "a1"))
-    assert translator.feed(event("delta.text_append", "other", "no")) == ""
+    translator.feed(event("delta.message_start", "start-id"))
+    assert translator.feed(event("delta.text_append", "append-id", "ab")) == "ab"
+    assert translator.feed(event("delta.text_append", "other-id", "cd")) == "cd"
+    assert translator.feed(event("delta.message_done", "done-id", "abcd")) == ""
+    assert translator.accumulated == "abcd"
+    assert translator.finished
+    assert translator.done_text == "abcd"
+
+
+def test_translator_done_text_used_when_no_deltas():
+    translator = shim.StreamTranslator()
+    translator.feed(event("message.user", "note-1"))
     assert translator.feed(event("delta.message_done", "a1", "full text")) == "full text"
     assert translator.finished
     assert translator.done_text == "full text"

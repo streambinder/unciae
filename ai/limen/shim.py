@@ -223,15 +223,15 @@ class StreamTranslator:
 
     Correlation is by order: nothing is emitted before our turn's
     message.user event (earlier events are history replayed when the
-    subscription opened), and deltas from any message other than the
-    first reply message are ignored. agent.status and task.status are
+    subscription opened). The Linux server's delta events do not share
+    one stable message id, so no id gating is applied: deltas are
+    emitted in arrival order. agent.status and task.status are
     dropped by design: Pi shows its own working indicator.
     """
 
     def __init__(self, follow: bool = False) -> None:
         self.follow = follow
         self.started = False
-        self.owner = ""
         self.accumulated = ""
         self.done_text = ""
         self.finished = False
@@ -239,11 +239,9 @@ class StreamTranslator:
     def feed(self, event: dict[str, Any]) -> str:
         """Return the text to emit as one SSE delta, or "" for none."""
         name = str(event.get("event") or "")
-        mid = str(event.get("message_id") or "")
         text = str(event.get("text") or "")
         if name == "message.user":
             if self.follow:
-                self.owner = ""
                 self.accumulated = ""
                 self.done_text = ""
                 self.finished = False
@@ -252,13 +250,9 @@ class StreamTranslator:
         if not self.started:
             return ""
         if name == "delta.message_start":
-            self.owner = self.owner or mid
             return ""
         if name not in ("delta.text_append", "delta.message_done", "message.assistant"):
             return ""
-        if self.owner and mid and mid != self.owner:
-            return ""
-        self.owner = self.owner or mid
         if name == "delta.text_append":
             self.accumulated += text
             return text

@@ -15,6 +15,9 @@ adds the streaming mode to service.py only:
   ({"event": ...}) while the turn runs, and finishes with the usual
   result line as the last line. Requests without it keep the exact
   one-line behaviour.
+* A socket request with "subscribe": true and "listen": true opens
+  the subscription without sending anything, so a turn started
+  elsewhere can be observed live. The result line is {"ok": true}.
 
 Fails the build loudly if upstream changes an expected line. An
 optional first argument overrides the musegadget package directory
@@ -33,7 +36,7 @@ SERVICE_PATCHES = [
         "MAX_LOCAL_REQUEST = 4 * 1024 * 1024  # room for a 2 MiB image in base64\n",
         (
             "MAX_LOCAL_REQUEST = 4 * 1024 * 1024  # room for a 2 MiB image in base64\n"
-            "STREAM_WAIT_S = 660\nSTREAM_QUIET_S = 15\n"
+            "STREAM_WAIT_S = 660\nSTREAM_QUIET_S = 15\nLISTEN_QUIET_S = 300\n"
         ),
     ),
     (
@@ -179,10 +182,15 @@ class Service:
         ends, or STREAM_WAIT_S elapses. A subscription that fails or ends
         early never fails the turn: the result line still goes out and
         the shim falls back to its file drop.
+        With "listen": true the request carries no message and nothing is
+        sent: every subscription event is forwarded live until the
+        subscription ends, LISTEN_QUIET_S of silence passes, or
+        STREAM_WAIT_S elapses. The result line is {"ok": true}.
         \"\"\"
         request = json.loads(line)
+        listen = isinstance(request, dict) and request.get("listen") is True
         message = request.get("message") if isinstance(request, dict) else None
-        if not isinstance(message, str) or not message.strip():
+        if not listen and (not isinstance(message, str) or not message.strip()):
             reply = {"ok": False, "error": "expected {\\"message\\": \\"...\\"}"}
             writer.write(json.dumps(reply).encode() + b"\\n")
             await writer.drain()
@@ -201,8 +209,11 @@ class Service:
             writer.write(json.dumps(reply).encode() + b"\\n")
             await writer.drain()
             return
-        log.info("forwarding a %d-character message to the Muse (subscribed)",
-                 len(message))
+        if listen:
+            log.info("listening on the subscription without sending")
+        else:
+            log.info("forwarding a %d-character message to the Muse (subscribed)",
+                     len(message))
         events: asyncio.Queue = asyncio.Queue()
         seen: collections.deque = collections.deque(maxlen=256)
 
@@ -226,9 +237,12 @@ class Service:
         tracker = _ReplyTracker()
         buffered: list[dict] = []
         result: dict | None = None
-        forwarding = False
+        forwarding = listen
+        quiet_s = LISTEN_QUIET_S if listen else STREAM_QUIET_S
         try:
-            post = asyncio.ensure_future(session.send_chat(message, session_id))
+            post = None
+            if not listen:
+                post = asyncio.ensure_future(session.send_chat(message, session_id))
             deadline = time.monotonic() + STREAM_WAIT_S
             last_event = time.monotonic()
             done = False
@@ -243,10 +257,11 @@ class Service:
                     if forwarding:
                         writer.write(json.dumps({"event": event}).encode() + b"\\n")
                         await writer.drain()
-                        done = tracker.feed(event)
+                        if not listen:
+                            done = tracker.feed(event)
                     else:
                         buffered.append(event)
-                if post.done() and result is None:
+                if post is not None and post.done() and result is None:
                     result = post.result()
                     response = result.get("response")
                     note_id = ""
@@ -279,12 +294,14 @@ class Service:
                         if tracker.feed(past):
                             done = True
                             break
-                if pump_task.done() and events.empty() and post.done():
+                if pump_task.done() and events.empty() and (post is None or post.done()):
                     break
-                if post.done() and time.monotonic() - last_event > STREAM_QUIET_S:
+                if (post is None or post.done()) and time.monotonic() - last_event > quiet_s:
                     break
             if result is None:
-                if post.done():
+                if listen:
+                    result = {"ok": True}
+                elif post is not None and post.done():
                     result = post.result()
                 else:
                     post.cancel()

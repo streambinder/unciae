@@ -21,7 +21,10 @@ logged), agent.status and task.status are dropped. Correlation is by
 order: everything before our turn's message.user event is history
 replayed when the subscription opened and is dropped; the gadget
 service already buffers events until the chat ack names our note and
-forwards only from that event on.
+forwards only from that event on. With stream=true and
+"listen_only": true the shim opens the subscription without sending,
+so a turn started elsewhere can be observed live; each message.user
+event restarts the correlation.
 
 Reply protocol: the gadget chat API answers with a delivery receipt
 only, never the assistant's text. To still complete the call, the shim
@@ -163,17 +166,8 @@ def ask_muse(prompt: str, session_id: str) -> dict[str, Any]:
     return reply
 
 
-def iter_muse_stream(prompt: str, session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Yield ("event", dict) lines then one ("result", dict) from the socket.
-
-    Asks the gadget service for the streaming turn (patch_subscribe.py);
-    a service without that patch ignores the flag and yields just the
-    result line, the pre-streaming behaviour.
-    """
-    request = (
-        json.dumps({"message": prompt, "session_id": session_id, "subscribe": True}).encode()
-        + b"\n"
-    )
+def _iter_socket(request: bytes) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield ("event", dict) lines then one ("result", dict) from the socket."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(TIMEOUT_S)
         sock.connect(SOCKET_PATH)
@@ -197,6 +191,33 @@ def iter_muse_stream(prompt: str, session_id: str) -> Iterator[tuple[str, dict[s
                     return
 
 
+def iter_muse_stream(prompt: str, session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield ("event", dict) lines then one ("result", dict) from the socket.
+
+    Asks the gadget service for the streaming turn (patch_subscribe.py);
+    a service without that patch ignores the flag and yields just the
+    result line, the pre-streaming behaviour.
+    """
+    request = (
+        json.dumps({"message": prompt, "session_id": session_id, "subscribe": True}).encode()
+        + b"\n"
+    )
+    yield from _iter_socket(request)
+
+
+def iter_muse_listen(session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield ("event", dict) lines then one ("result", dict) from the socket.
+
+    Same socket protocol as iter_muse_stream, but the request carries
+    "listen": true and no message, so the service forwards the session's
+    subscription events without sending anything.
+    """
+    request = (
+        json.dumps({"session_id": session_id, "subscribe": True, "listen": True}).encode() + b"\n"
+    )
+    yield from _iter_socket(request)
+
+
 class StreamTranslator:
     """Turns flattened subscribe events into SSE delta texts.
 
@@ -207,7 +228,8 @@ class StreamTranslator:
     dropped by design: Pi shows its own working indicator.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, follow: bool = False) -> None:
+        self.follow = follow
         self.started = False
         self.owner = ""
         self.accumulated = ""
@@ -220,6 +242,11 @@ class StreamTranslator:
         mid = str(event.get("message_id") or "")
         text = str(event.get("text") or "")
         if name == "message.user":
+            if self.follow:
+                self.owner = ""
+                self.accumulated = ""
+                self.done_text = ""
+                self.finished = False
             self.started = True
             return ""
         if not self.started:
@@ -319,12 +346,19 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _stream_response(
-        self, forwarded: str, session_id: str, model: str, cid: str, wait: bool, started: float
+        self,
+        forwarded: str,
+        session_id: str,
+        model: str,
+        cid: str,
+        wait: bool,
+        started: float,
+        listen: bool = False,
     ) -> None:
         """Answer a stream=true request with SSE chunks from /chat/subscribe."""
         comp_id = f"chatcmpl-gadget-{int(time.time())}"
         created = int(time.time())
-        translator = StreamTranslator()
+        translator = StreamTranslator(follow=listen)
         state = {"headers": False, "sent": False, "appends": 0}
 
         def send_headers() -> None:
@@ -359,7 +393,10 @@ class Handler(BaseHTTPRequestHandler):
 
         result: dict[str, Any] | None = None
         try:
-            for kind, obj in iter_muse_stream(forwarded, session_id):
+            items = (
+                iter_muse_listen(session_id) if listen else iter_muse_stream(forwarded, session_id)
+            )
+            for kind, obj in items:
                 if kind == "result":
                     result = obj
                     break
@@ -383,7 +420,7 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": {"message": f"Muse turn failed: {result.get('error') or result}"}},
                 )
                 return
-        if not translator.accumulated:
+        if not listen and not translator.accumulated:
             content = ""
             if wait:
                 content = wait_for_reply(cid, REPLY_WAIT_S)
@@ -461,9 +498,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": {"message": "invalid JSON body"}})
             return
 
+        listen_only = body.get("listen_only") is True
+        if listen_only and not body.get("stream"):
+            self._send_json(400, {"error": {"message": "listen_only requires stream"}})
+            return
         messages = body.get("messages") or []
         prompt = build_prompt(messages)
-        if not prompt:
+        if not prompt and not listen_only:
             self._send_json(400, {"error": {"message": "no message content"}})
             return
         session_raw = (
@@ -475,13 +516,13 @@ class Handler(BaseHTTPRequestHandler):
         session_id = sanitize_session_id(str(session_raw))
         model = str(body.get("model") or MODEL_ID)
         cid = uuid.uuid4().hex
-        wait = REPLY_WAIT_S > 0 and body.get("wait_reply") is not False
+        wait = False if listen_only else REPLY_WAIT_S > 0 and body.get("wait_reply") is not False
         forwarded = prompt + reply_footer(cid) if wait else prompt
 
         started = time.monotonic()
         log(f"chat session={session_id} prompt_chars={len(prompt)} wait={wait}")
         if body.get("stream"):
-            self._stream_response(forwarded, session_id, model, cid, wait, started)
+            self._stream_response(forwarded, session_id, model, cid, wait, started, listen_only)
             return
         try:
             reply = ask_muse(forwarded, session_id)

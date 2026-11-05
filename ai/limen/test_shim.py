@@ -703,6 +703,32 @@ def test_stream_listen_only_observes_live_turn_without_drop(server, monkeypatch)
     assert "data: [DONE]" in text
 
 
+def test_stream_response_disables_proxy_buffering(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    _patch_listen(
+        monkeypatch,
+        items=[
+            ("event", event("message.user", "n1")),
+            ("event", event("delta.text_append", "a1", "live")),
+            ("event", event("delta.message_done", "a1", "live")),
+            ("result", {"ok": True}),
+        ],
+    )
+    conn = http.client.HTTPConnection("127.0.0.1", server, timeout=10)
+    conn.request(
+        "POST",
+        "/v1/chat/completions",
+        body=json.dumps({"stream": True, "listen_only": True, "session_id": "sess-1"}),
+        headers={"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+    assert response.getheader("X-Accel-Buffering") == "no"
+    raw = response.read()
+    conn.close()
+    assert response.status == 200
+    assert '"content": "live"' in raw.decode()
+
+
 def test_listen_only_without_stream_is_400(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
     status, _, raw = _request(server, "POST", "/v1/chat/completions", body={"listen_only": True})

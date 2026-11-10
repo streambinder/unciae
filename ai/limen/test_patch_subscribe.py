@@ -238,3 +238,30 @@ def test_local_stream_request_listen_forwards_without_sending(patched_sdk):
     ]
     assert results == [{"ok": True}]
     assert objs[-1] is results[0]
+
+
+class _FakeReader:
+    def __init__(self, line):
+        self.line = line
+
+    async def readline(self):
+        return self.line
+
+
+def test_handle_local_routes_subscribe_chat_op_upstream(patched_sdk):
+    svc = object.__new__(patched_sdk.Service)
+    calls = []
+
+    async def fake_subscribe(request, reader, writer):
+        calls.append(request)
+
+    def fail_request(line):
+        raise AssertionError("subscribe_chat must not reach _local_request")
+
+    svc._local_subscribe = fake_subscribe
+    svc._local_request = fail_request
+    writer = _FakeWriter()
+    writer.close = lambda: None
+    line = json.dumps({"op": "subscribe_chat", "session_id": "chat-1"}).encode()
+    asyncio.run(svc._handle_local(_FakeReader(line), writer))
+    assert calls == [{"op": "subscribe_chat", "session_id": "chat-1"}]

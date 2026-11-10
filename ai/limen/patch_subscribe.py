@@ -12,6 +12,7 @@ adds the streaming mode to service.py only:
   turn (correlation is by order, see its docstring).
 * A socket request with "subscribe": true opens the subscription
   before send_chat, forwards each event as its own JSON line
+  (upstream's own {"op": "subscribe_chat"} routing is preserved).
   ({"event": ...}) while the turn runs, and finishes with the usual
   result line as the last line. Requests without it keep the exact
   one-line behaviour.
@@ -122,6 +123,10 @@ class Service:
                 reply = {"ok": False,
                          "error": f"the request is over {MAX_LOCAL_REQUEST // (1024 * 1024)} MiB"}
             else:
+                request = json.loads(line)
+                if isinstance(request, dict) and request.get("op") == "subscribe_chat":
+                    await self._local_subscribe(request, reader, writer)
+                    return
                 reply = await self._local_request(line)
         except Exception as exc:
             reply = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -145,6 +150,10 @@ class Service:
                 reply = {"ok": False,
                          "error": f"the request is over {MAX_LOCAL_REQUEST // (1024 * 1024)} MiB"}
             else:
+                request = json.loads(line)
+                if isinstance(request, dict) and request.get("op") == "subscribe_chat":
+                    await self._local_subscribe(request, reader, writer)
+                    return
                 if self._wants_subscribe(line):
                     await self._local_stream_request(line, writer)
                     return

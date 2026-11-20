@@ -82,6 +82,10 @@ else
 	echo "Fetching coordinates for ${ADDRESS}..."
 	address_encoded="$(jq -rn --arg address "${ADDRESS}" '$address|@uri')"
 	osm_data="$(curl -s "https://nominatim.openstreetmap.org/search?format=json&q=${address_encoded}")"
+	# Nominatim can return the same place once per OSM object that
+	# carries its name. Collapse equal display names and keep the
+	# first result of each, in result order.
+	osm_data="$(jq -c 'reduce .[] as $r ([]; if any(.[]; .display_name == $r.display_name) then . else . + [$r] end)' <<<"${osm_data}")"
 	osm_results="$(jq -r length <<<"${osm_data}")"
 	if [ "${osm_results}" -eq 0 ]; then
 		echo "No results found."

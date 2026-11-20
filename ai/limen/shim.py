@@ -26,17 +26,19 @@ forwards only from that event on. With stream=true and
 so a turn started elsewhere can be observed live; each message.user
 event restarts the correlation.
 
-Reply protocol: the gadget chat API answers with a delivery receipt
-only, never the assistant's text. To still complete the call, the shim
-appends a note to the forwarded prompt asking the agent to write its
-reply to /workspace/replies/<correlation-id>.txt on this device (the
-gadget file.write command), then waits up to SHIM_REPLY_WAIT_S seconds
-for that file and returns its content. On timeout it falls back to the
-receipt payload, the pre-protocol behaviour. Clients opt out per
-request with "wait_reply": false. The reply drop stays the fallback
-for streaming too: when the subscription yields no assistant text
-(upstream issues #87 and #121: subscribe replies sometimes arrive
-empty), the shim waits for the drop before finishing the SSE stream.
+Reply protocol: for a non-streaming call the shim asks the service to
+wait for the answer (the upstream wait path: the service opens the
+/chat/subscribe subscription before sending and returns the finished
+reply text in "reply", capped at SHIM_REPLY_WAIT_S seconds and at the
+service limit of 600). No file drop is involved. On a wait that yields
+no text the shim falls back to the receipt payload. Clients opt out
+per request with "wait_reply": false. The reply drop is kept only for
+streaming: the shim appends a note to the forwarded prompt asking the
+agent to write its reply to /workspace/replies/<correlation-id>.txt
+on this device (the gadget file.write command), then waits up to
+SHIM_REPLY_WAIT_S seconds for that file when the subscription yields
+no assistant text (upstream issues #87 and #121: subscribe replies
+sometimes arrive empty).
 
 Auth: when SHIM_API_KEYS is set (comma-separated), /v1/* requires an
 "Authorization: Bearer <key>" header matching one of the keys; other
@@ -64,6 +66,7 @@ TIMEOUT_S = int(os.environ.get("SHIM_TIMEOUT_S", "1800"))
 MODEL_ID = os.environ.get("SHIM_MODEL_ID", "tiro")
 REPLIES_DIR = os.environ.get("SHIM_REPLIES_DIR", "/workspace/replies")
 REPLY_WAIT_S = int(os.environ.get("SHIM_REPLY_WAIT_S", "600"))
+MAX_WAIT_S = 600  # upstream service limit for the "wait" socket field
 REPLY_POLL_S = 2.0
 API_KEYS = [k.strip() for k in os.environ.get("SHIM_API_KEYS", "").split(",") if k.strip()]
 
@@ -150,8 +153,17 @@ def extract_text(node: Any, depth: int = 0) -> str:
     return ""
 
 
-def ask_muse(prompt: str, session_id: str) -> dict[str, Any]:
-    request = json.dumps({"message": prompt, "session_id": session_id}).encode() + b"\n"
+def ask_muse(prompt: str, session_id: str, wait_s: int | None = None) -> dict[str, Any]:
+    """Send one turn; with wait_s the service waits for the reply text.
+
+    The service answers a "wait" request with the finished reply in
+    "reply" (None when no answer came, "partial" when the wait ran out
+    mid-answer). Without it the answer is the delivery receipt only.
+    """
+    payload: dict[str, Any] = {"message": prompt, "session_id": session_id}
+    if wait_s is not None:
+        payload["wait"] = wait_s
+    request = json.dumps(payload).encode() + b"\n"
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(TIMEOUT_S)
         sock.connect(SOCKET_PATH)
@@ -529,7 +541,10 @@ class Handler(BaseHTTPRequestHandler):
             self._stream_response(forwarded, session_id, model, cid, wait, started, listen_only)
             return
         try:
-            reply = ask_muse(forwarded, session_id)
+            if wait:
+                reply = ask_muse(prompt, session_id, min(REPLY_WAIT_S, MAX_WAIT_S))
+            else:
+                reply = ask_muse(forwarded, session_id)
         except (OSError, ValueError) as exc:
             log(f"chat failed after {time.monotonic() - started:.1f}s: {exc}")
             self._send_json(502, {"error": {"message": f"musegadget unreachable: {exc}"}})
@@ -546,11 +561,17 @@ class Handler(BaseHTTPRequestHandler):
 
         content = ""
         if wait:
-            content = wait_for_reply(cid, REPLY_WAIT_S)
-            if content:
-                log(f"reply deposited after {time.monotonic() - started:.1f}s")
+            waited = reply.get("reply")
+            if isinstance(waited, str) and waited.strip():
+                content = waited
+                if reply.get("partial"):
+                    log(
+                        f"wait reply partial after {time.monotonic() - started:.1f}s: {reply.get('detail')}"
+                    )
+                else:
+                    log(f"wait reply after {time.monotonic() - started:.1f}s")
             else:
-                log(f"no reply deposited within {REPLY_WAIT_S}s; receipt fallback")
+                log(f"wait returned no reply: {reply.get('detail')}")
         if not content:
             content = extract_text(reply.get("response"))
         if not content:

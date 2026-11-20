@@ -296,6 +296,16 @@ def test_ask_muse_roundtrip(monkeypatch, tmp_path):
     assert sent == {"message": "prompt text", "session_id": "sess-1"}
 
 
+def test_ask_muse_sends_wait_field(monkeypatch, tmp_path):
+    received = []
+    path = _unix_server(tmp_path, [b'{"ok": true, "reply": "hi"}\n'], received)
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    reply = shim.ask_muse("prompt text", "sess-1", 120)
+    assert reply == {"ok": True, "reply": "hi"}
+    sent = json.loads(received[0])
+    assert sent == {"message": "prompt text", "session_id": "sess-1", "wait": 120}
+
+
 def test_iter_muse_stream_yields_events_then_result(monkeypatch, tmp_path):
     lines = [
         b"\n",
@@ -432,8 +442,8 @@ def test_post_denied_without_key(server, monkeypatch):
 def _patch_ask(monkeypatch, reply=None, error=None):
     calls = []
 
-    def fake_ask(prompt, session_id):
-        calls.append((prompt, session_id))
+    def fake_ask(prompt, session_id, wait_s=None):
+        calls.append((prompt, session_id, wait_s))
         if error is not None:
             raise error
         return reply
@@ -460,14 +470,22 @@ def test_post_completion_uses_response_text(server, monkeypatch):
     body = _json_body(raw)
     assert body["model"] == "custom"
     assert body["choices"][0]["message"]["content"] == "plain answer"
-    assert calls == [("user: hi", "My-Session")]
+    assert calls == [("user: hi", "My-Session", None)]
 
 
-def test_post_completion_prefers_reply_drop(server, monkeypatch):
+def test_post_completion_uses_wait_reply_text(server, monkeypatch):
+    # Non-streaming takes the reply from the service wait path: no
+    # footer in the prompt and no reply drop involved.
     monkeypatch.setattr(shim, "API_KEYS", [])
     monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
-    calls = _patch_ask(monkeypatch, reply={"ok": True, "response": "receipt"})
-    monkeypatch.setattr(shim, "wait_for_reply", lambda cid, deadline: "dropped text")
+    calls = _patch_ask(
+        monkeypatch, reply={"ok": True, "reply": "waited text", "response": "receipt"}
+    )
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop on wait path")),
+    )
     status, _, raw = _request(
         server,
         "POST",
@@ -475,23 +493,53 @@ def test_post_completion_prefers_reply_drop(server, monkeypatch):
         body={"messages": [{"role": "user", "content": "hi"}], "user": "bob"},
     )
     assert status == 200
-    assert _json_body(raw)["choices"][0]["message"]["content"] == "dropped text"
-    prompt, session_id = calls[0]
+    assert _json_body(raw)["choices"][0]["message"]["content"] == "waited text"
+    prompt, session_id, wait_s = calls[0]
     assert session_id == "bob"
-    assert "[limen]" in prompt
+    assert "[limen]" not in prompt
+    assert wait_s == 30
 
 
-def test_post_completion_falls_back_when_drop_empty(server, monkeypatch):
+def test_post_completion_accepts_partial_wait_reply(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
     monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
     _patch_ask(
         monkeypatch,
         reply={
             "ok": True,
+            "reply": "partial text",
+            "partial": True,
+            "detail": "no answer within 30 seconds",
+            "response": "receipt",
+        },
+    )
+    status, _, raw = _request(
+        server,
+        "POST",
+        "/v1/chat/completions",
+        body={"messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert status == 200
+    assert _json_body(raw)["choices"][0]["message"]["content"] == "partial text"
+
+
+def test_post_completion_falls_back_when_wait_empty(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(
+        monkeypatch,
+        reply={
+            "ok": True,
+            "reply": None,
+            "detail": "no answer within 30 seconds",
             "response": {"choices": [{"message": {"content": "nested"}}]},
         },
     )
-    monkeypatch.setattr(shim, "wait_for_reply", lambda cid, deadline: "")
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop on wait path")),
+    )
     status, _, raw = _request(
         server,
         "POST",

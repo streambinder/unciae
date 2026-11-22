@@ -70,7 +70,8 @@ container health check tests for the gadget socket.
 | `MUSEGADGET_SOCKET`    | `/run/musegadget/musegadget.sock` | Unix socket of the gadget service                  |
 | `SHIM_PORT`            | `8001`                            | Port of the shim HTTP server                       |
 | `SHIM_TIMEOUT_S`       | `1800`                            | Socket timeout for one turn                        |
-| `SHIM_MODEL_ID`        | `tiro`                            | Model ID reported by `/v1/models`                  |
+| `SHIM_MODEL_ID`        | `limen`                           | Model ID reported by `/v1/models`                  |
+| `SHIM_MODEL_ALIASES`   | `tiro`                            | Comma-separated Muse aliases                       |
 | `SHIM_REPLIES_DIR`     | `/workspace/replies`              | Reply drop directory                               |
 | `SHIM_REPLY_WAIT_S`    | `600`                             | Seconds to wait for a reply                        |
 | `SHIM_API_KEYS`        | (empty)                           | Comma-separated API keys                           |
@@ -103,14 +104,15 @@ A client needs three values.
 
 - `baseUrl`: the URL where you expose the shim, with the `/v1`
   path.
-- `model`: the configured model ID (`tiro` by default).
+- `model`: a Muse address (`limen` by default). See
+  [Model addressing](#model-addressing).
 - Session: a real Muse session UUID, sent as the `X-Session-Id`
   header. The shim also accepts `session_id` or `user` in the
   request body.
 
 The session ID must be a real Muse session UUID. A non-UUID value
-is rejected by the service. The shim falls back to a placeholder
-when no session ID is given. Do not rely on that fallback.
+is rejected by the service. With no session source the turn goes to
+the main chat.
 
 ## Capabilities
 
@@ -166,9 +168,35 @@ mode requires `stream: true`.
 
 ### Models and health
 
-`GET /v1/models` returns one model entry. The ID is the configured
-model ID. `GET /healthz` returns 200 when the gadget socket exists
+`GET /v1/models` lists the default model first, then each alias.
+`GET /healthz` returns 200 when the gadget socket exists
 and 503 when it does not. The health endpoint needs no key.
+
+### Model addressing
+
+The model in a completion request names a Muse and, optionally, a
+conversation inside it. The default model is `limen`. `limen` is
+the generic default. It names the default Muse and its main chat.
+It is not tied to one Muse. The first alias is the default Muse.
+
+A model value has one of these forms:
+
+- `limen`: the default Muse, main chat.
+- `<alias>`: that Muse, main chat.
+- `<alias>/main`: that Muse, main chat, spelled out.
+- `<alias>/<uuid>`: that conversation inside that Muse.
+
+`<uuid>` is a Muse session UUID. The part after the slash must be
+`main` or a valid UUID. Any other value gets a 400.
+
+The conversation in the model wins over the session source. The
+session source is the `X-Session-Id` header, then the `session_id`
+body field, then the `user` body field. With a bare model the session
+source wins. With neither the turn goes to the main chat. A client
+that sends no model is treated as `limen`. A client that sends no
+session source and a bare model lands on the main chat.
+
+An unknown alias gets a 404 with code `model_not_found`.
 
 ## Authentication
 
@@ -222,6 +250,23 @@ credential's scopes". A fresh session UUID works instead. The
 gateway auto-creates the session on first use. The web channel is
 not wired into the shim today. See
 [Routing between the two clients](#routing-between-the-two-clients).
+
+### Credential scopes
+
+The shim authenticates with a gadget credential. The gadget
+credential reaches the chat routes only: history, stream, subscribe,
+and stream events. It does not reach session management routes:
+session list, session get, chat search, session rename, session
+archive, or turn cancel. The server refuses those routes with a 403
+for this credential.
+
+A user credential reaches the session management routes. The web
+client uses a user credential, so it lists sessions by name. The shim
+cannot list sessions by name. It resolves a name only from static
+configuration.
+
+Live deltas are not a scope difference. The server sends live deltas
+only for main-chat turns, for both credentials.
 
 ## Routing between the two clients
 

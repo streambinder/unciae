@@ -70,6 +70,75 @@ def test_sanitize_session_id():
     assert shim.sanitize_session_id("--lead-trail--") == "lead-trail"
 
 
+# model addressing
+
+
+def test_resolve_model_default_names_default_muse_main(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ID", "limen")
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro"])
+    monkeypatch.setattr(shim, "DEFAULT_ALIAS", "tiro")
+    assert shim.resolve_model("limen", None) == shim.ModelRoute("tiro", None)
+    assert shim.resolve_model("limen", "sess-9") == shim.ModelRoute("tiro", "sess-9")
+
+
+def test_resolve_model_bare_alias_uses_header_session():
+    assert shim.resolve_model("tiro", "sess-9") == shim.ModelRoute("tiro", "sess-9")
+
+
+def test_resolve_model_bare_alias_without_header_is_main():
+    assert shim.resolve_model("tiro", None) == shim.ModelRoute("tiro", None)
+
+
+def test_resolve_model_slash_uuid_wins_over_header():
+    route = shim.resolve_model("tiro/12345678-1234-1234-1234-1234567890AB", "sess-9")
+    assert route == shim.ModelRoute("tiro", "12345678-1234-1234-1234-1234567890ab")
+
+
+def test_resolve_model_slash_main_is_main_even_with_header():
+    assert shim.resolve_model("tiro/main", "sess-9") == shim.ModelRoute("tiro", None)
+
+
+def test_resolve_model_unknown_alias_is_404():
+    with pytest.raises(shim.ModelAddressError) as exc:
+        shim.resolve_model("nope", None)
+    assert exc.value.status == 404
+    assert exc.value.code == "model_not_found"
+
+
+def test_resolve_model_bad_conversation_is_400():
+    for bad in (
+        "tiro/not-a-uuid",
+        "tiro/",
+        "tiro/12345678-1234-1234-1234-1234567890ab/extra",
+        "tiro/12345678",
+    ):
+        with pytest.raises(shim.ModelAddressError) as exc:
+            shim.resolve_model(bad, None)
+        assert exc.value.status == 400
+        assert exc.value.code == "invalid_model"
+
+
+def test_resolve_model_header_is_sanitized():
+    assert shim.resolve_model("tiro", "My Session!") == shim.ModelRoute("tiro", "My-Session")
+
+
+def test_model_route_equality_and_repr():
+    route = shim.ModelRoute("tiro", None)
+    assert route == shim.ModelRoute("tiro", None)
+    assert route != shim.ModelRoute("tiro", "sess-9")
+    assert route != "tiro"
+    assert repr(route) == "ModelRoute(alias='tiro', session_id=None)"
+
+
+def test_model_list_default_first_then_aliases(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ID", "limen")
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro", "other"])
+    assert [m["id"] for m in shim.model_list()] == ["limen", "tiro", "other"]
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro"])
+    monkeypatch.setattr(shim, "MODEL_ID", "tiro")
+    assert [m["id"] for m in shim.model_list()] == ["tiro"]
+
+
 def test_message_text_variants():
     assert shim.message_text("plain") == "plain"
     content = [
@@ -306,6 +375,22 @@ def test_ask_muse_sends_wait_field(monkeypatch, tmp_path):
     assert sent == {"message": "prompt text", "session_id": "sess-1", "wait": 120}
 
 
+def test_ask_muse_omits_session_id_for_main(monkeypatch, tmp_path):
+    received = []
+    path = _unix_server(tmp_path, [b'{"ok": true, "response": "hi"}\n'], received)
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    assert shim.ask_muse("prompt text", None) == {"ok": True, "response": "hi"}
+    assert json.loads(received[0]) == {"message": "prompt text"}
+
+
+def test_ask_muse_omits_session_id_for_main_with_wait(monkeypatch, tmp_path):
+    received = []
+    path = _unix_server(tmp_path, [b'{"ok": true, "reply": "hi"}\n'], received)
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    shim.ask_muse("prompt text", None, 120)
+    assert json.loads(received[0]) == {"message": "prompt text", "wait": 120}
+
+
 def test_iter_muse_stream_yields_events_then_result(monkeypatch, tmp_path):
     lines = [
         b"\n",
@@ -362,6 +447,15 @@ def test_iter_socket_sets_ready_and_stops_on_event(monkeypatch, tmp_path):
     assert time.monotonic() - started < 2
 
 
+def test_iter_muse_stream_omits_session_id_for_main(monkeypatch, tmp_path):
+    lines = [json.dumps({"ok": True}).encode() + b"\n"]
+    received = []
+    path = _unix_server(tmp_path, lines, received)
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    assert list(shim.iter_muse_stream("p", None)) == [("result", {"ok": True})]
+    assert json.loads(received[0]) == {"message": "p", "subscribe": True}
+
+
 def test_translator_follow_mode_restarts_on_each_user_event():
     translator = shim.StreamTranslator(follow=True)
     assert translator.feed(event("message.user", "n0")) == ""
@@ -382,6 +476,15 @@ def test_iter_muse_listen_sends_listen_request(monkeypatch, tmp_path):
     results = list(shim.iter_muse_listen("s"))
     assert [kind for kind, _ in results] == ["event", "result"]
     assert json.loads(received[0]) == {"session_id": "s", "subscribe": True, "listen": True}
+
+
+def test_iter_muse_listen_omits_session_id_for_main(monkeypatch, tmp_path):
+    lines = [json.dumps({"ok": True}).encode() + b"\n"]
+    received = []
+    path = _unix_server(tmp_path, lines, received)
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    assert list(shim.iter_muse_listen(None)) == [("result", {"ok": True})]
+    assert json.loads(received[0]) == {"subscribe": True, "listen": True}
 
 
 # HTTP handler
@@ -418,6 +521,15 @@ def test_get_models_open(server, monkeypatch):
     status, _, raw = _request(server, "GET", "/v1/models")
     assert status == 200
     assert _json_body(raw)["data"][0]["id"] == shim.MODEL_ID
+
+
+def test_get_models_lists_default_first_then_aliases(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "MODEL_ID", "limen")
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro", "other"])
+    status, _, raw = _request(server, "GET", "/v1/models")
+    assert status == 200
+    assert [m["id"] for m in _json_body(raw)["data"]] == ["limen", "tiro", "other"]
 
 
 def test_get_models_auth(server, monkeypatch):
@@ -493,13 +605,13 @@ def test_post_completion_uses_response_text(server, monkeypatch):
         body={
             "messages": [{"role": "user", "content": "hi"}],
             "wait_reply": False,
-            "model": "custom",
+            "model": "tiro",
         },
         headers={"X-Session-Id": "My Session!"},
     )
     assert status == 200
     body = _json_body(raw)
-    assert body["model"] == "custom"
+    assert body["model"] == "tiro"
     assert body["choices"][0]["message"]["content"] == "plain answer"
     assert calls == [("user: hi", "My-Session", None)]
 
@@ -579,6 +691,83 @@ def test_post_completion_falls_back_when_wait_empty(server, monkeypatch):
     )
     assert status == 200
     assert _json_body(raw)["choices"][0]["message"]["content"] == "nested"
+
+
+def _completion_request(server, body, headers=None):
+    return _request(server, "POST", "/v1/chat/completions", body=body, headers=headers)
+
+
+def test_post_model_tiro_with_header_keeps_header_session(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text", "response": "r"})
+    status, _, raw = _completion_request(
+        server,
+        {"messages": [{"role": "user", "content": "hi"}], "model": "tiro"},
+        headers={"X-Session-Id": "sess-9"},
+    )
+    assert status == 200
+    assert _json_body(raw)["model"] == "tiro"
+    assert calls == [("user: hi", "sess-9", 30)]
+
+
+def test_post_model_slash_uuid_wins_over_header(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text", "response": "r"})
+    status, _, _ = _completion_request(
+        server,
+        {
+            "messages": [{"role": "user", "content": "hi"}],
+            "model": "tiro/12345678-1234-1234-1234-1234567890ab",
+        },
+        headers={"X-Session-Id": "sess-9"},
+    )
+    assert status == 200
+    assert calls == [("user: hi", "12345678-1234-1234-1234-1234567890ab", 30)]
+
+
+def test_post_bare_model_without_header_goes_to_main(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text", "response": "r"})
+    status, _, _ = _completion_request(
+        server, {"messages": [{"role": "user", "content": "hi"}], "model": "tiro"}
+    )
+    assert status == 200
+    assert calls == [("user: hi", None, 30)]
+
+
+def test_post_no_model_without_header_goes_to_main(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text", "response": "r"})
+    status, _, raw = _completion_request(server, {"messages": [{"role": "user", "content": "hi"}]})
+    assert status == 200
+    assert _json_body(raw)["model"] == "limen"
+    assert calls == [("user: hi", None, 30)]
+
+
+def test_post_unknown_model_is_404(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text"})
+    status, _, raw = _completion_request(
+        server, {"messages": [{"role": "user", "content": "hi"}], "model": "nope"}
+    )
+    assert status == 404
+    assert _json_body(raw)["error"]["code"] == "model_not_found"
+    assert calls == []
+
+
+def test_post_bad_model_conversation_is_400(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text"})
+    status, _, raw = _completion_request(
+        server, {"messages": [{"role": "user", "content": "hi"}], "model": "tiro/not-a-uuid"}
+    )
+    assert status == 400
+    assert _json_body(raw)["error"]["code"] == "invalid_model"
+    assert calls == []
 
 
 def test_post_completion_unextractable_response_is_json_dumped(server, monkeypatch):
@@ -669,7 +858,7 @@ def test_stream_completion_emits_sse_deltas(server, monkeypatch):
     assert '"finish_reason": "stop"' in text
     assert "data: [DONE]" in text
     prompt, session_id, wait_s = calls[0]
-    assert session_id == "pi-main"
+    assert session_id is None  # no model, no session source: main chat
     assert "[limen]" not in prompt
     assert wait_s == 30
 
@@ -694,7 +883,7 @@ def test_stream_hybrid_emits_wait_text_when_no_deltas(server, monkeypatch):
     assert '"finish_reason": "stop"' in text
     assert "data: [DONE]" in text
     prompt, session_id, wait_s = calls[0]
-    assert session_id == "pi-main"
+    assert session_id is None  # no model, no session source: main chat
     assert "[limen]" not in prompt
     assert wait_s == 30
 
@@ -838,7 +1027,7 @@ def test_stream_falls_back_to_reply_drop(server, monkeypatch):
     assert status == 200
     assert '"content": "fallback text"' in raw.decode()
     prompt, session_id, wait_s = calls[0]
-    assert session_id == "pi-main"
+    assert session_id is None  # no model, no session source: main chat
     assert "[limen]" not in prompt
     assert wait_s == 30
     assert "[limen]" in stream_calls[0][0]
@@ -910,6 +1099,27 @@ def test_stream_extracts_result_text_when_no_deltas(server, monkeypatch):
     status, _, raw = _stream_request(server, wait_reply=False)
     assert status == 200
     assert '"content": "whole reply"' in raw.decode()
+
+
+def test_stream_uses_resolved_session_from_model(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    seen = []
+
+    def fake_iter(prompt, session_id):
+        seen.append((prompt, session_id))
+        yield ("event", event("message.user", "n1"))
+        yield ("event", event("delta.text_append", "a1", "hi"))
+        yield ("result", {"ok": True})
+
+    monkeypatch.setattr(shim, "iter_muse_stream", fake_iter)
+    status, _, raw = _stream_request(
+        server,
+        wait_reply=False,
+        model="tiro/12345678-1234-1234-1234-1234567890ab",
+    )
+    assert status == 200
+    assert seen == [("user: hi", "12345678-1234-1234-1234-1234567890ab")]
+    assert '"content": "hi"' in raw.decode()
 
 
 def _patch_listen(monkeypatch, items=None, error=None):

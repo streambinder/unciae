@@ -29,6 +29,19 @@ shim opens the subscription without sending, so a turn started
 elsewhere can be observed live; each message.user event restarts the
 correlation.
 
+Model addressing: the model names a Muse and, optionally, a
+conversation inside it: "<alias>" for that Muse's main chat,
+"<alias>/<uuid>" for one conversation, "<alias>/main" for the main
+chat spelled out. "limen" is the default model and names the default
+Muse. The conversation in the model wins over the X-Session-Id
+header (or the session_id/user body field); with a bare model the
+header wins, and with neither the turn goes to the main chat.
+Unknown aliases get a 404 model_not_found; a conversation part that
+is neither "main" nor a UUID gets a 400. Aliases come from
+SHIM_MODEL_ALIASES at startup. For the main chat the socket request
+omits session_id, which the service routes to the main chat, so no
+main-chat id is configured anywhere.
+
 Reply protocol: for a non-streaming call the shim asks the service to
 wait for the answer (the upstream wait path: the service opens the
 /chat/subscribe subscription before sending and returns the finished
@@ -69,7 +82,11 @@ from typing import Any, Literal
 SOCKET_PATH = os.environ.get("MUSEGADGET_SOCKET", "/run/musegadget/musegadget.sock")
 PORT = int(os.environ.get("SHIM_PORT", "8001"))
 TIMEOUT_S = int(os.environ.get("SHIM_TIMEOUT_S", "1800"))
-MODEL_ID = os.environ.get("SHIM_MODEL_ID", "tiro")
+MODEL_ID = os.environ.get("SHIM_MODEL_ID", "limen")
+MODEL_ALIASES = [
+    a.strip() for a in os.environ.get("SHIM_MODEL_ALIASES", "tiro").split(",") if a.strip()
+]
+DEFAULT_ALIAS = MODEL_ALIASES[0] if MODEL_ALIASES else MODEL_ID
 REPLIES_DIR = os.environ.get("SHIM_REPLIES_DIR", "/workspace/replies")
 REPLY_WAIT_S = int(os.environ.get("SHIM_REPLY_WAIT_S", "600"))
 MAX_WAIT_S = 600  # upstream service limit for the "wait" socket field
@@ -94,6 +111,84 @@ def log(msg: str) -> None:
 def sanitize_session_id(raw: str) -> str:
     sid = re.sub(r"[^A-Za-z0-9-]", "-", raw).strip("-")
     return sid[:64] or "pi-main"
+
+
+_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+class ModelRoute:
+    """A resolved model address: which Muse, which conversation.
+
+    session_id None means the Muse main chat: the socket request
+    omits session_id and the service routes the turn to the main chat.
+    A plain class, not a dataclass: the test loader runs this module
+    without registering it in sys.modules, where a dataclass would
+    fail resolving the annotations.
+    """
+
+    def __init__(self, alias: str, session_id: str | None) -> None:
+        self.alias = alias
+        self.session_id = session_id
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ModelRoute):
+            return NotImplemented
+        return self.alias == other.alias and self.session_id == other.session_id
+
+    def __repr__(self) -> str:
+        return f"ModelRoute(alias={self.alias!r}, session_id={self.session_id!r})"
+
+
+class ModelAddressError(ValueError):
+    """A model string that is not a valid address, with its HTTP status."""
+
+    def __init__(self, message: str, status: int, code: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+def resolve_model(model: str, session_source: str | None) -> ModelRoute:
+    """Resolve a model address to a Muse alias and a conversation.
+
+    "limen" (the configured default model id) names the default Muse;
+    "<alias>" names that Muse; "<alias>/<uuid>" names a conversation
+    inside it; "<alias>/main" is the explicit main chat. The
+    conversation in the model wins over the session source (the
+    X-Session-Id header, session_id or user body field); with a bare
+    model the session source wins, and with neither the turn goes to
+    the main chat.
+    """
+    name, sep, conversation = model.strip().partition("/")
+    if name == MODEL_ID:
+        alias = DEFAULT_ALIAS
+    elif name in MODEL_ALIASES:
+        alias = name
+    else:
+        raise ModelAddressError(f"The model `{model}` does not exist", 404, "model_not_found")
+    if not sep:
+        session_id = sanitize_session_id(session_source) if session_source else None
+        return ModelRoute(alias, session_id)
+    if conversation == "main":
+        return ModelRoute(alias, None)
+    if _UUID_RE.fullmatch(conversation):
+        return ModelRoute(alias, str(uuid.UUID(conversation)))
+    raise ModelAddressError(
+        f"Invalid model `{model}`: expected <alias> or <alias>/<uuid> or <alias>/main",
+        400,
+        "invalid_model",
+    )
+
+
+def model_list() -> list[dict[str, Any]]:
+    """The models this shim serves: the default first, then each alias."""
+    ids = [MODEL_ID] + [a for a in MODEL_ALIASES if a != MODEL_ID]
+    return [
+        {"id": model_id, "object": "model", "created": 0, "owned_by": "musegadget-shim"}
+        for model_id in ids
+    ]
 
 
 def message_text(content: Any) -> str:
@@ -159,14 +254,18 @@ def extract_text(node: Any, depth: int = 0) -> str:
     return ""
 
 
-def ask_muse(prompt: str, session_id: str, wait_s: int | None = None) -> dict[str, Any]:
+def ask_muse(prompt: str, session_id: str | None, wait_s: int | None = None) -> dict[str, Any]:
     """Send one turn; with wait_s the service waits for the reply text.
 
     The service answers a "wait" request with the finished reply in
     "reply" (None when no answer came, "partial" when the wait ran out
     mid-answer). Without it the answer is the delivery receipt only.
+    With session_id None the turn goes to the Muse main chat: the
+    service routes a request without session_id to the main chat.
     """
-    payload: dict[str, Any] = {"message": prompt, "session_id": session_id}
+    payload: dict[str, Any] = {"message": prompt}
+    if session_id is not None:
+        payload["session_id"] = session_id
     if wait_s is not None:
         payload["wait"] = wait_s
     request = json.dumps(payload).encode() + b"\n"
@@ -229,22 +328,23 @@ def _iter_socket(
                     return
 
 
-def iter_muse_stream(prompt: str, session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
+def iter_muse_stream(prompt: str, session_id: str | None) -> Iterator[tuple[str, dict[str, Any]]]:
     """Yield ("event", dict) lines then one ("result", dict) from the socket.
 
     Asks the gadget service for the streaming turn (patch_subscribe.py);
     a service without that patch ignores the flag and yields just the
-    result line, the pre-streaming behaviour.
+    result line, the pre-streaming behaviour. With session_id None the
+    turn goes to the Muse main chat.
     """
-    request = (
-        json.dumps({"message": prompt, "session_id": session_id, "subscribe": True}).encode()
-        + b"\n"
-    )
+    request_body: dict[str, Any] = {"message": prompt, "subscribe": True}
+    if session_id is not None:
+        request_body["session_id"] = session_id
+    request = json.dumps(request_body).encode() + b"\n"
     yield from _iter_socket(request)
 
 
 def iter_muse_listen(
-    session_id: str,
+    session_id: str | None,
     ready: threading.Event | None = None,
     stop: threading.Event | None = None,
 ) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -252,12 +352,14 @@ def iter_muse_listen(
 
     Same socket protocol as iter_muse_stream, but the request carries
     "listen": true and no message, so the service forwards the session's
-    subscription events without sending anything. ready and stop are
+    subscription events without sending anything. With session_id None
+    the subscription follows the Muse main chat. ready and stop are
     the hybrid streaming hooks, passed through to _iter_socket.
     """
-    request = (
-        json.dumps({"session_id": session_id, "subscribe": True, "listen": True}).encode() + b"\n"
-    )
+    request_body: dict[str, Any] = {"subscribe": True, "listen": True}
+    if session_id is not None:
+        request_body["session_id"] = session_id
+    request = json.dumps(request_body).encode() + b"\n"
     yield from _iter_socket(request, ready=ready, stop=stop)
 
 
@@ -421,7 +523,7 @@ class Handler(BaseHTTPRequestHandler):
     def _stream_hybrid(
         self,
         prompt: str,
-        session_id: str,
+        session_id: str | None,
         translator: StreamTranslator,
         send_delta: Any,
         state: dict[str, Any],
@@ -510,7 +612,7 @@ class Handler(BaseHTTPRequestHandler):
         self,
         prompt: str,
         forwarded: str,
-        session_id: str,
+        session_id: str | None,
         model: str,
         cid: str,
         wait: bool,
@@ -654,20 +756,7 @@ class Handler(BaseHTTPRequestHandler):
             if not authorized(self.headers):
                 self._deny()
                 return
-            self._send_json(
-                200,
-                {
-                    "object": "list",
-                    "data": [
-                        {
-                            "id": MODEL_ID,
-                            "object": "model",
-                            "created": 0,
-                            "owned_by": "musegadget-shim",
-                        }
-                    ],
-                },
-            )
+            self._send_json(200, {"object": "list", "data": model_list()})
         elif self.path == "/healthz":
             ok = os.path.exists(SOCKET_PATH)
             self._send_json(200 if ok else 503, {"ok": ok, "socket": SOCKET_PATH})
@@ -697,20 +786,35 @@ class Handler(BaseHTTPRequestHandler):
         if not prompt and not listen_only:
             self._send_json(400, {"error": {"message": "no message content"}})
             return
-        session_raw = (
-            body.get("session_id")
-            or body.get("user")
-            or self.headers.get("X-Session-Id")
-            or "pi-main"
+        model = str(body.get("model") or MODEL_ID).strip() or MODEL_ID
+        session_source = (
+            body.get("session_id") or body.get("user") or self.headers.get("X-Session-Id")
         )
-        session_id = sanitize_session_id(str(session_raw))
-        model = str(body.get("model") or MODEL_ID)
+        try:
+            route = resolve_model(model, str(session_source) if session_source else None)
+        except ModelAddressError as exc:
+            self._send_json(
+                exc.status,
+                {
+                    "error": {
+                        "message": str(exc),
+                        "type": "invalid_request_error",
+                        "param": "model",
+                        "code": exc.code,
+                    }
+                },
+            )
+            return
+        session_id = route.session_id
         cid = uuid.uuid4().hex
         wait = False if listen_only else REPLY_WAIT_S > 0 and body.get("wait_reply") is not False
         forwarded = prompt + reply_footer(cid) if wait else prompt
 
         started = time.monotonic()
-        log(f"chat session={session_id} prompt_chars={len(prompt)} wait={wait}")
+        log(
+            f"chat model={model} session={session_id or 'main'} "
+            f"prompt_chars={len(prompt)} wait={wait}"
+        )
         if body.get("stream"):
             self._stream_response(
                 prompt, forwarded, session_id, model, cid, wait, started, listen_only

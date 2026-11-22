@@ -11,20 +11,23 @@ v0 notes:
 - Message contents are never logged, only lengths, timings and event
   types.
 
-Streaming: with stream=true the shim asks the gadget service to open a
-/chat/subscribe subscription (see patch_subscribe.py) and translates
-its events into OpenAI SSE chunks as they arrive: delta.text_append
-becomes a chunk, delta.message_done carries the full authoritative
-text (checked against the accumulated deltas; SSE cannot retract, so
-on a mismatch the streamed text stands and only the lengths are
-logged), agent.status and task.status are dropped. Correlation is by
-order: everything before our turn's message.user event is history
-replayed when the subscription opened and is dropped; the gadget
-service already buffers events until the chat ack names our note and
-forwards only from that event on. With stream=true and
-"listen_only": true the shim opens the subscription without sending,
-so a turn started elsewhere can be observed live; each message.user
-event restarts the correlation.
+Streaming: with stream=true the shim sends the turn once with the
+upstream wait field (see Reply protocol) while it drains a
+subscribe-only connection for live deltas, and translates the deltas
+into OpenAI SSE chunks as they arrive: delta.text_append becomes a
+chunk, delta.message_done carries the full authoritative text
+(checked against the accumulated deltas; SSE cannot retract, so on a
+mismatch the streamed text stands and only the lengths are logged),
+agent.status and task.status are dropped. Live deltas are best
+effort: the server emits them only for turns in the primary session,
+so a turn in a side chat streams nothing live and the finished wait
+text is sent as the reply instead, so the client always gets the
+complete answer. Correlation is by order: everything before our
+turn's message.user event is history replayed when the subscription
+opened and is dropped. With stream=true and "listen_only": true the
+shim opens the subscription without sending, so a turn started
+elsewhere can be observed live; each message.user event restarts the
+correlation.
 
 Reply protocol: for a non-streaming call the shim asks the service to
 wait for the answer (the upstream wait path: the service opens the
@@ -32,13 +35,15 @@ wait for the answer (the upstream wait path: the service opens the
 reply text in "reply", capped at SHIM_REPLY_WAIT_S seconds and at the
 service limit of 600). No file drop is involved. On a wait that yields
 no text the shim falls back to the receipt payload. Clients opt out
-per request with "wait_reply": false. The reply drop is kept only for
-streaming: the shim appends a note to the forwarded prompt asking the
-agent to write its reply to /workspace/replies/<correlation-id>.txt
-on this device (the gadget file.write command), then waits up to
-SHIM_REPLY_WAIT_S seconds for that file when the subscription yields
-no assistant text (upstream issues #87 and #121: subscribe replies
-sometimes arrive empty).
+per request with "wait_reply": false. The reply drop is kept only as
+the streaming fallback when the wait send is rejected (the service
+refuses a second concurrent wait on the same session): the shim then
+sends without the wait field, appends a note to the forwarded prompt
+asking the agent to write its reply to
+/workspace/replies/<correlation-id>.txt on this device (the gadget
+file.write command), then waits up to SHIM_REPLY_WAIT_S seconds for
+that file when the subscription yields no assistant text (upstream
+issues #87 and #121: subscribe replies sometimes arrive empty).
 
 Auth: when SHIM_API_KEYS is set (comma-separated), /v1/* requires an
 "Authorization: Bearer <key>" header matching one of the keys; other
@@ -54,11 +59,12 @@ import re
 import secrets
 import socket
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Literal
 
 SOCKET_PATH = os.environ.get("MUSEGADGET_SOCKET", "/run/musegadget/musegadget.sock")
 PORT = int(os.environ.get("SHIM_PORT", "8001"))
@@ -178,15 +184,35 @@ def ask_muse(prompt: str, session_id: str, wait_s: int | None = None) -> dict[st
     return reply
 
 
-def _iter_socket(request: bytes) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Yield ("event", dict) lines then one ("result", dict) from the socket."""
+def _iter_socket(
+    request: bytes,
+    ready: threading.Event | None = None,
+    stop: threading.Event | None = None,
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield ("event", dict) lines then one ("result", dict) from the socket.
+
+    With ready given, the event is set once the request is on the wire,
+    so a sender waiting for the subscription can start. With stop
+    given, the socket is polled and the iterator ends promptly once
+    stop is set, instead of waiting for the service to close the
+    subscription.
+    """
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.settimeout(TIMEOUT_S)
+        sock.settimeout(0.5 if stop is not None else TIMEOUT_S)
         sock.connect(SOCKET_PATH)
         sock.sendall(request)
+        if ready is not None:
+            ready.set()
         buf = bytearray()
         while True:
-            chunk = sock.recv(65536)
+            try:
+                chunk = sock.recv(65536)
+            except TimeoutError:
+                if stop is None:
+                    raise
+                if stop.is_set():
+                    return
+                continue
             if not chunk:
                 return
             buf += chunk
@@ -217,17 +243,22 @@ def iter_muse_stream(prompt: str, session_id: str) -> Iterator[tuple[str, dict[s
     yield from _iter_socket(request)
 
 
-def iter_muse_listen(session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
+def iter_muse_listen(
+    session_id: str,
+    ready: threading.Event | None = None,
+    stop: threading.Event | None = None,
+) -> Iterator[tuple[str, dict[str, Any]]]:
     """Yield ("event", dict) lines then one ("result", dict) from the socket.
 
     Same socket protocol as iter_muse_stream, but the request carries
     "listen": true and no message, so the service forwards the session's
-    subscription events without sending anything.
+    subscription events without sending anything. ready and stop are
+    the hybrid streaming hooks, passed through to _iter_socket.
     """
     request = (
         json.dumps({"session_id": session_id, "subscribe": True, "listen": True}).encode() + b"\n"
     )
-    yield from _iter_socket(request)
+    yield from _iter_socket(request, ready=ready, stop=stop)
 
 
 class StreamTranslator:
@@ -360,8 +391,124 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    @staticmethod
+    def _drain(
+        items: Iterator[tuple[str, dict[str, Any]]],
+        translator: StreamTranslator,
+        send_delta: Any,
+        state: dict[str, Any],
+        started: float,
+    ) -> tuple[dict[str, Any] | None, OSError | ValueError | None]:
+        """Forward subscribe events as SSE deltas; return (result, error)."""
+        result: dict[str, Any] | None = None
+        try:
+            for kind, obj in items:
+                if kind == "result":
+                    result = obj
+                    break
+                if obj.get("event") == "delta.text_append":
+                    state["appends"] += 1
+                else:
+                    log(f"stream event {obj.get('event')}")
+                delta = translator.feed(obj)
+                if delta:
+                    send_delta(delta)
+        except (OSError, ValueError) as exc:
+            log(f"stream failed after {time.monotonic() - started:.1f}s: {exc}")
+            return result, exc
+        return result, None
+
+    def _stream_hybrid(
+        self,
+        prompt: str,
+        session_id: str,
+        translator: StreamTranslator,
+        send_delta: Any,
+        state: dict[str, Any],
+        started: float,
+    ) -> Literal["done", "answered", "fallback"]:
+        """Best-effort streaming: wait send plus live deltas.
+
+        Sends the turn once with the upstream wait field in a worker
+        thread while the main thread drains a subscribe-only connection
+        for live deltas. "done" means the reply was reconciled and the
+        caller closes the stream; "answered" means a 502 was already
+        sent; "fallback" means the wait send was rejected, so the
+        caller falls back to the legacy drop path.
+        """
+        ready = threading.Event()
+        stop = threading.Event()
+        slot: dict[str, Any] = {}
+
+        def send_with_wait() -> None:
+            while not ready.wait(timeout=0.5):
+                if stop.is_set():
+                    return
+            try:
+                slot["reply"] = ask_muse(prompt, session_id, min(REPLY_WAIT_S, MAX_WAIT_S))
+            except (OSError, ValueError) as exc:
+                slot["error"] = exc
+            finally:
+                stop.set()
+
+        sender = threading.Thread(target=send_with_wait, daemon=True)
+        sender.start()
+        try:
+            _, error = self._drain(
+                iter_muse_listen(session_id, ready=ready, stop=stop),
+                translator,
+                send_delta,
+                state,
+                started,
+            )
+        finally:
+            stop.set()
+        sender.join()
+        reply = slot.get("reply")
+        if reply is not None and reply.get("ok"):
+            waited = reply.get("reply")
+            if translator.accumulated:
+                if isinstance(waited, str) and waited.strip() and waited != translator.accumulated:
+                    log(
+                        f"stream wait text differs: deltas_chars={len(translator.accumulated)} "
+                        f"wait_chars={len(waited)}"
+                    )
+                return "done"
+            content = ""
+            if isinstance(waited, str) and waited.strip():
+                content = waited
+                if reply.get("partial"):
+                    log(
+                        f"wait reply partial after {time.monotonic() - started:.1f}s: {reply.get('detail')}"
+                    )
+                else:
+                    log(f"wait reply after {time.monotonic() - started:.1f}s")
+            else:
+                log(f"wait returned no reply: {reply.get('detail')}")
+            if not content:
+                content = extract_text(reply.get("response"))
+            if content:
+                translator.accumulated = content
+                send_delta(content)
+            return "done"
+        if reply is not None:
+            log(
+                f"stream wait rejected ({reply.get('error') or reply.get('status')}); "
+                "falling back to the drop path"
+            )
+            return "fallback"
+        if error is not None and not state["headers"]:
+            self._send_json(502, {"error": {"message": f"musegadget unreachable: {error}"}})
+            return "answered"
+        if not state["headers"]:
+            detail = slot.get("error") or "send failed"
+            self._send_json(502, {"error": {"message": f"musegadget unreachable: {detail}"}})
+            return "answered"
+        return "done"
+
     def _stream_response(
         self,
+        prompt: str,
         forwarded: str,
         session_id: str,
         model: str,
@@ -370,7 +517,14 @@ class Handler(BaseHTTPRequestHandler):
         started: float,
         listen: bool = False,
     ) -> None:
-        """Answer a stream=true request with SSE chunks from /chat/subscribe."""
+        """Answer a stream=true request with SSE chunks.
+
+        Best effort: the turn is sent once with the upstream wait field
+        while the subscription is drained for live deltas. Deltas stream
+        as they arrive; when none arrive the finished wait text is sent
+        as the reply instead. The reply drop stays only as the fallback
+        when the wait send is rejected.
+        """
         comp_id = f"chatcmpl-gadget-{int(time.time())}"
         created = int(time.time())
         translator = StreamTranslator(follow=listen)
@@ -407,36 +561,67 @@ class Handler(BaseHTTPRequestHandler):
             state["sent"] = True
             send_chunk(delta, None)
 
-        result: dict[str, Any] | None = None
-        try:
-            items = (
-                iter_muse_listen(session_id) if listen else iter_muse_stream(forwarded, session_id)
-            )
-            for kind, obj in items:
-                if kind == "result":
-                    result = obj
-                    break
-                if obj.get("event") == "delta.text_append":
-                    state["appends"] += 1
-                else:
-                    log(f"stream event {obj.get('event')}")
-                delta = translator.feed(obj)
-                if delta:
-                    send_delta(delta)
-        except (OSError, ValueError) as exc:
-            log(f"stream failed after {time.monotonic() - started:.1f}s: {exc}")
-            if not state["headers"]:
-                self._send_json(502, {"error": {"message": f"musegadget unreachable: {exc}"}})
-                return
-        if result is not None and not result.get("ok"):
+        def fail_turn(result: dict[str, Any]) -> bool:
+            """502 for a failed turn before any chunk; True when answered."""
+            if result.get("ok"):
+                return False
             log(f"stream turn not ok: {result.get('error') or result.get('status')}")
             if not state["headers"]:
                 self._send_json(
                     502,
                     {"error": {"message": f"Muse turn failed: {result.get('error') or result}"}},
                 )
+                return True
+            return False
+
+        def finish() -> None:
+            if translator.done_text and translator.done_text != translator.accumulated:
+                log(
+                    f"stream done text differs: deltas_chars={len(translator.accumulated)} "
+                    f"done_chars={len(translator.done_text)}"
+                )
+            send_chunk({}, "stop")
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            log(
+                f"stream ok in {time.monotonic() - started:.1f}s "
+                f"appends={state['appends']} response_chars={len(translator.accumulated)}"
+            )
+
+        if listen:
+            result, error = self._drain(
+                iter_muse_listen(session_id), translator, send_delta, state, started
+            )
+            if error is not None and not state["headers"]:
+                self._send_json(502, {"error": {"message": f"musegadget unreachable: {error}"}})
                 return
-        if not listen and not translator.accumulated:
+            if result is not None and fail_turn(result):
+                return
+            finish()
+            return
+
+        if wait:
+            outcome = self._stream_hybrid(
+                prompt, session_id, translator, send_delta, state, started
+            )
+            if outcome == "done":
+                finish()
+                return
+            if outcome == "answered":
+                return
+            # Fallback: the wait send was rejected; use the legacy drop path.
+            translator = StreamTranslator()
+            state["appends"] = 0
+
+        result, error = self._drain(
+            iter_muse_stream(forwarded, session_id), translator, send_delta, state, started
+        )
+        if error is not None and not state["headers"]:
+            self._send_json(502, {"error": {"message": f"musegadget unreachable: {error}"}})
+            return
+        if result is not None and fail_turn(result):
+            return
+        if not translator.accumulated:
             content = ""
             if wait:
                 content = wait_for_reply(cid, REPLY_WAIT_S)
@@ -450,18 +635,7 @@ class Handler(BaseHTTPRequestHandler):
             if content:
                 translator.accumulated = content
                 send_delta(content)
-        elif translator.done_text and translator.done_text != translator.accumulated:
-            log(
-                f"stream done text differs: deltas_chars={len(translator.accumulated)} "
-                f"done_chars={len(translator.done_text)}"
-            )
-        send_chunk({}, "stop")
-        self.wfile.write(b"data: [DONE]\n\n")
-        self.wfile.flush()
-        log(
-            f"stream ok in {time.monotonic() - started:.1f}s "
-            f"appends={state['appends']} response_chars={len(translator.accumulated)}"
-        )
+        finish()
 
     def _deny(self) -> None:
         self._send_json(
@@ -538,7 +712,9 @@ class Handler(BaseHTTPRequestHandler):
         started = time.monotonic()
         log(f"chat session={session_id} prompt_chars={len(prompt)} wait={wait}")
         if body.get("stream"):
-            self._stream_response(forwarded, session_id, model, cid, wait, started, listen_only)
+            self._stream_response(
+                prompt, forwarded, session_id, model, cid, wait, started, listen_only
+            )
             return
         try:
             if wait:

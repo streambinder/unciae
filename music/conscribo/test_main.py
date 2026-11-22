@@ -13,6 +13,11 @@ import pytest
 
 SCORE_URL = "https://musescore.com/user/19710/scores/4766391"
 SCORE_ID = "4766391"
+VANITY_URL = "https://musescore.com/someuser/some-carol-duet"
+VANITY_PAGE = (
+    b'<html><head><link rel="canonical" href="'
+    b'https://musescore.com/user/19710/scores/4766391"></head></html>'
+)
 TINY_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="140">'
     b'<rect width="100" height="140" fill="white"/></svg>'
@@ -44,7 +49,7 @@ def jmuse_url(index: int) -> str:
     return f"https://musescore.com/api/jmuse?id={SCORE_ID}&index={index}&type=img"
 
 
-def two_page_session() -> FakeSession:
+def two_page_session(impersonate: str = "chrome") -> FakeSession:
     return FakeSession(
         {
             SCORE_URL: [(200, b"<html></html>")],
@@ -72,8 +77,34 @@ def test_score_id_missing() -> None:
         main.score_id("https://musescore.com/")
 
 
+def test_resolve_score_id_from_canonical_link() -> None:
+    assert main.resolve_score_id(VANITY_PAGE, VANITY_URL) == SCORE_ID
+
+
+def test_resolve_score_id_from_meta_url() -> None:
+    page = (
+        b'<html><head><meta property="og:url" content="'
+        b'https://musescore.com/user/19710/scores/4766391"></head></html>'
+    )
+    assert main.resolve_score_id(page, VANITY_URL) == SCORE_ID
+
+
+def test_resolve_score_id_from_frequent_link() -> None:
+    page = (
+        b'<a href="/user/1/scores/111">one</a>'
+        b'<a href="/user/2/scores/222">two</a>'
+        b'<a href="/user/2/scores/222">two</a>'
+    )
+    assert main.resolve_score_id(page, VANITY_URL) == "222"
+
+
+def test_resolve_score_id_missing() -> None:
+    with pytest.raises(main.ConscriboError):
+        main.resolve_score_id(b"<html></html>", VANITY_URL)
+
+
 def test_token_shape_and_format() -> None:
-    expected = hashlib.md5(b"4766391img1,%!),").hexdigest()[:4]
+    expected = hashlib.md5(b"4766391img10101").hexdigest()[:4]
     assert main.token(SCORE_ID, 1) == expected
     assert len(main.token(SCORE_ID, 0)) == 4
 
@@ -112,7 +143,7 @@ def test_signed_page_url_raises_on_refusal() -> None:
 def test_download_pages_stops_at_first_missing_page() -> None:
     session = two_page_session()
     session.get(SCORE_URL)
-    assert main.download_pages(session, SCORE_URL) == [TINY_SVG, TINY_SVG]
+    assert main.download_pages(session, SCORE_ID, SCORE_URL) == [TINY_SVG, TINY_SVG]
 
 
 def test_download_pages_raises_when_no_page_exists() -> None:
@@ -123,7 +154,7 @@ def test_download_pages_raises_when_no_page_exists() -> None:
         }
     )
     with pytest.raises(main.ConscriboError):
-        main.download_pages(session, SCORE_URL)
+        main.download_pages(session, SCORE_ID, SCORE_URL)
 
 
 def test_download_pages_raises_on_fetch_error() -> None:
@@ -134,7 +165,7 @@ def test_download_pages_raises_on_fetch_error() -> None:
         }
     )
     with pytest.raises(main.ConscriboError):
-        main.download_pages(session, SCORE_URL)
+        main.download_pages(session, SCORE_ID, SCORE_URL)
 
 
 def test_page_pdf_renders_a_pdf() -> None:
@@ -148,14 +179,64 @@ def test_assemble_pdf_merges_pages() -> None:
 
 def test_run_writes_the_pdf(tmp_path: Path) -> None:
     output = tmp_path / "sheet.pdf"
-    assert main.run(SCORE_URL, output, two_page_session()) == 0
+    assert main.run(SCORE_URL, output, two_page_session) == 0
     assert page_count(output.read_bytes()) == 2
 
 
+def test_run_resolves_id_from_vanity_url(tmp_path: Path) -> None:
+    def vanity_session(impersonate: str = "chrome") -> FakeSession:
+        session = two_page_session()
+        session.script[VANITY_URL] = [(200, VANITY_PAGE)]
+        return session
+
+    output = tmp_path / "sheet.pdf"
+    assert main.run(VANITY_URL, output, vanity_session) == 0
+    assert page_count(output.read_bytes()) == 2
+
+
+def test_run_rotates_fingerprint_on_403(tmp_path: Path) -> None:
+    tried: list[str] = []
+
+    def rotating_session(impersonate: str) -> FakeSession:
+        tried.append(impersonate)
+        if impersonate == "chrome":
+            return FakeSession({VANITY_URL: [(403, b"blocked")]})
+        session = two_page_session()
+        session.script[VANITY_URL] = [(200, VANITY_PAGE)]
+        return session
+
+    output = tmp_path / "sheet.pdf"
+    assert main.run(VANITY_URL, output, rotating_session) == 0
+    assert tried == ["chrome", "chrome131"]
+    assert page_count(output.read_bytes()) == 2
+
+
+def test_run_tries_preferred_fingerprint_first(tmp_path: Path) -> None:
+    tried: list[str] = []
+
+    def recording_session(impersonate: str) -> FakeSession:
+        tried.append(impersonate)
+        return two_page_session()
+
+    output = tmp_path / "sheet.pdf"
+    assert main.run(SCORE_URL, output, recording_session, "safari18_0") == 0
+    assert tried == ["safari18_0"]
+
+
 def test_run_raises_when_the_page_fetch_fails() -> None:
-    session = FakeSession({SCORE_URL: [(503, b"boom")]})
+    def failing_session(impersonate: str = "chrome") -> FakeSession:
+        return FakeSession({SCORE_URL: [(503, b"boom")]})
+
     with pytest.raises(main.ConscriboError):
-        main.run(SCORE_URL, Path("unused.pdf"), session)
+        main.run(SCORE_URL, Path("unused.pdf"), failing_session)
+
+
+def test_run_raises_when_all_fingerprints_refused() -> None:
+    def refused_session(impersonate: str) -> FakeSession:
+        return FakeSession({SCORE_URL: [(403, b"blocked")]})
+
+    with pytest.raises(main.ConscriboError):
+        main.run(SCORE_URL, Path("unused.pdf"), refused_session)
 
 
 def test_main_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -165,9 +246,26 @@ def test_main_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert (tmp_path / f"{SCORE_ID}.pdf").exists()
 
 
+def test_main_writes_pdf_for_vanity_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def vanity_session(impersonate: str = "chrome") -> FakeSession:
+        session = two_page_session()
+        session.script[VANITY_URL] = [(200, VANITY_PAGE)]
+        return session
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "HttpSession", vanity_session)
+    assert main.main([VANITY_URL]) == 0
+    assert (tmp_path / f"{SCORE_ID}.pdf").exists()
+
+
 def test_main_reports_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    def broken_session() -> FakeSession:
-        return FakeSession({SCORE_URL: [(503, b"boom")]})
+    def broken_session(impersonate: str = "chrome") -> FakeSession:
+        return FakeSession(
+            {
+                SCORE_URL: [(503, b"boom")],
+                "https://musescore.com/": [(200, b"<html></html>")],
+            }
+        )
 
     monkeypatch.setattr(main, "HttpSession", broken_session)
     assert main.main([SCORE_URL]) == 1
@@ -215,3 +313,32 @@ def test_http_session_get_request_failure(monkeypatch: pytest.MonkeyPatch) -> No
     session = stub_session(monkeypatch, failure)
     with pytest.raises(main.ConscriboError):
         session.get("https://example.com")
+
+
+def test_http_session_forwards_impersonate(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    class RecordingTransport:
+        def __init__(self, **kwargs: object) -> None:
+            seen.update(kwargs)
+
+        def get(self, _url: str, headers: Any = None, timeout: int = 0) -> StubTransportResponse:
+            return StubTransportResponse(200, b"body")
+
+    monkeypatch.setattr(main.requests, "Session", RecordingTransport)
+    session = main.HttpSession(impersonate="safari18_0")
+    assert seen == {"impersonate": "safari18_0"}
+    assert session.get("https://example.com") == (200, b"body")
+
+
+def test_main_forwards_impersonate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen: dict[str, str] = {}
+
+    def recording_session(impersonate: str = "chrome") -> FakeSession:
+        seen["impersonate"] = impersonate
+        return two_page_session()
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "HttpSession", recording_session)
+    assert main.main([SCORE_URL, "--impersonate", "safari18_0"]) == 0
+    assert seen == {"impersonate": "safari18_0"}

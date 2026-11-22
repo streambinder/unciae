@@ -9,6 +9,7 @@ import json
 import re
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -19,7 +20,10 @@ JMUSE_URL = "https://musescore.com/api/jmuse"
 # the site client signs every jmuse call with the first four hex digits of
 # the md5 of score id, type, page index and this fixed suffix, concatenated;
 # the suffix ships in clear text inside the public javascript bundle
-SIGNING_SUFFIX = ",%!),"
+SIGNING_SUFFIX = "0101"
+# browser fingerprints to try, in order, when the site refuses one with
+# http 403; the first entry is the default, the others are fallbacks
+IMPERSONATE_CANDIDATES = ("chrome", "chrome131", "safari18_0")
 RETRYABLE_API_STATUS = 422
 MAX_RETRIES = 3
 RETRY_DELAY_S = 2.0
@@ -27,6 +31,15 @@ RETRY_DELAY_S = 2.0
 A4_WIDTH_PT = 595.28
 A4_HEIGHT_PT = 841.89
 TRAILING_ID_RE = re.compile(r"(\d+)/?$")
+CANONICAL_LINK_RE = re.compile(
+    r'<link[^>]*rel="canonical"[^>]*href="([^"]+)"'
+    r'|<link[^>]*href="([^"]+)"[^>]*rel="canonical"'
+)
+META_URL_RE = re.compile(
+    r'<meta[^>]*property="(?:og:url|al:web:url)"[^>]*content="([^"]+)"'
+    r'|<meta[^>]*content="([^"]+)"[^>]*property="(?:og:url|al:web:url)"'
+)
+SCORE_LINK_RE = re.compile(r"/scores/(\d+)")
 
 
 class ConscriboError(Exception):
@@ -44,12 +57,14 @@ class Session(Protocol):
 class HttpSession:
     """A session that keeps the cookies the site sets on the first fetch.
 
-    The transport impersonates the Chrome network fingerprint. The site
-    refuses plain HTTP clients from some networks on fingerprint alone.
+    The transport impersonates a browser network fingerprint. The site
+    refuses plain HTTP clients from some networks on fingerprint alone,
+    and a fingerprint can burn out after a burst of requests: pass
+    another one when the site starts refusing the default.
     """
 
-    def __init__(self) -> None:
-        self._session = requests.Session(impersonate="chrome")
+    def __init__(self, impersonate: str = "chrome") -> None:
+        self._session = requests.Session(impersonate=impersonate)
 
     def get(self, url: str, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
         try:
@@ -66,6 +81,27 @@ def score_id(url: str) -> str:
     if match is None:
         raise ConscriboError(f"no score id in URL: {url}")
     return match.group(1)
+
+
+def resolve_score_id(page: bytes, url: str) -> str:
+    """Find the score id in a fetched score page.
+
+    The page carries its own canonical address. Fall back to the most
+    frequent score link when the page has no canonical address.
+    """
+    text = page.decode("utf-8", "ignore")
+    for pattern in (CANONICAL_LINK_RE, META_URL_RE):
+        match = pattern.search(text)
+        if match is None:
+            continue
+        href: str = next(group for group in match.groups() if group is not None)
+        found = TRAILING_ID_RE.search(href.split("?")[0].split("#")[0].rstrip("/"))
+        if found is not None:
+            return found.group(1)
+    links: list[str] = SCORE_LINK_RE.findall(text)
+    if links:
+        return max(set(links), key=links.count)
+    raise ConscriboError(f"no score id in page: {url}")
 
 
 def token(sid: str, index: int) -> str:
@@ -104,17 +140,16 @@ def signed_page_url(session: Session, sid: str, index: int, referer: str) -> str
     raise ConscriboError(f"jmuse kept refusing page {index} after retries")
 
 
-def download_pages(session: Session, page_url: str) -> list[bytes]:
+def download_pages(session: Session, sid: str, referer: str) -> list[bytes]:
     """Download every page of the sheet as SVG bytes, in sheet order.
 
     The session must have fetched the score page first: the API only
     answers requests that carry the cookies of that first fetch.
     """
-    sid = score_id(page_url)
     pages: list[bytes] = []
     index = 0
     while True:
-        signed = signed_page_url(session, sid, index, page_url)
+        signed = signed_page_url(session, sid, index, referer)
         status, body = session.get(signed)
         if status == 404:
             break
@@ -144,14 +179,42 @@ def page_pdf(svg: bytes) -> bytes:
     return assemble_pdf([svg])
 
 
-def run(url: str, output: Path, session: Session) -> int:
+def fetch_score_page(
+    url: str, make_session: Callable[[str], Session], impersonate: str
+) -> tuple[Session, bytes]:
+    """Fetch the score page, rotating fingerprints on a 403 refusal.
+
+    The preferred fingerprint goes first, then the other candidates.
+    A refusal other than 403 is final: another fingerprint will not fix it.
+    """
+    candidates = [impersonate, *[c for c in IMPERSONATE_CANDIDATES if c != impersonate]]
+    for candidate in candidates:
+        session = make_session(candidate)
+        status, body = session.get(url)
+        if status == 200:
+            return session, body
+        if status != 403:
+            raise ConscriboError(f"score page fetch failed with http {status}")
+        print(f"fingerprint {candidate} refused with http 403, trying next", file=sys.stderr)
+    raise ConscriboError("score page fetch failed with http 403")
+
+
+def run(
+    url: str,
+    output: Path | None,
+    make_session: Callable[[str], Session],
+    impersonate: str = "chrome",
+) -> int:
     """Download the sheet at the URL and write the PDF to the output path."""
     # the first fetch sets the session cookies; without the cookies the API
     # refuses every later request
-    status, _ = session.get(url)
-    if status != 200:
-        raise ConscriboError(f"score page fetch failed with http {status}")
-    pages = download_pages(session, url)
+    session, body = fetch_score_page(url, make_session, impersonate)
+    try:
+        sid = score_id(url)
+    except ConscriboError:
+        sid = resolve_score_id(body, url)
+    pages = download_pages(session, sid, url)
+    output = output or Path(f"{sid}.pdf")
     output.write_bytes(assemble_pdf(pages))
     print(f"pages: {len(pages)}", file=sys.stderr)
     print(f"written: {output}", file=sys.stderr)
@@ -168,10 +231,14 @@ def main(argv: list[str]) -> int:
         default=None,
         help="output PDF path (default: <score id>.pdf)",
     )
+    parser.add_argument(
+        "--impersonate",
+        default="chrome",
+        help="browser fingerprint to try first (default: chrome)",
+    )
     args = parser.parse_args(argv)
     try:
-        output = args.output or Path(f"{score_id(args.url)}.pdf")
-        return run(args.url, output, HttpSession())
+        return run(args.url, args.output, HttpSession, args.impersonate)
     except ConscriboError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

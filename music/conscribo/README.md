@@ -28,5 +28,12 @@ uv run python main.py https://musescore.com/user/19710/scores/4766391
 uv run python main.py <score-url> -o gymnopedie.pdf
 ```
 
+A vanity URL without a trailing ID works too: the tool reads the ID from
+the canonical address in the fetched score page.
+
+When the site refuses a fingerprint with http 403, the tool retries with
+the next one, in order: chrome, chrome131, safari18_0. `--impersonate`
+sets the fingerprint to try first.
+
 The first form writes `<score id>.pdf` in the current directory. The tool
 prints the page count and the output path on stderr.

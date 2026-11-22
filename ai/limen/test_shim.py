@@ -331,6 +331,37 @@ def test_iter_muse_stream_ends_on_close_without_result(monkeypatch, tmp_path):
     assert [kind for kind, _ in results] == ["event"]
 
 
+def test_iter_socket_sets_ready_and_stops_on_event(monkeypatch, tmp_path):
+    # The hybrid hooks: ready is set once the request is on the wire,
+    # and the iterator ends promptly once stop is set instead of
+    # waiting for the service to close the subscription.
+    path = str(tmp_path / "gadget.sock")
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(path)
+    server.listen(1)
+
+    def serve():
+        conn, _ = server.accept()
+        with conn:
+            conn.recv(65536)
+            conn.sendall(json.dumps({"event": event("agent.status")}).encode() + b"\n")
+            time.sleep(5)
+        server.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    monkeypatch.setattr(shim, "SOCKET_PATH", path)
+    ready = threading.Event()
+    stop = threading.Event()
+    items = shim._iter_socket(b'{"session_id": "s"}\n', ready=ready, stop=stop)
+    first = next(items)
+    assert first == ("event", event("agent.status"))
+    assert ready.is_set()
+    stop.set()
+    started = time.monotonic()
+    assert list(items) == []
+    assert time.monotonic() - started < 2
+
+
 def test_translator_follow_mode_restarts_on_each_user_event():
     translator = shim.StreamTranslator(follow=True)
     assert translator.feed(event("message.user", "n0")) == ""
@@ -590,12 +621,16 @@ def test_post_completion_failed_turn_is_502(server, monkeypatch):
 
 
 def _patch_stream(monkeypatch, items=None, error=None):
+    calls = []
+
     def fake_iter(prompt, session_id):
+        calls.append((prompt, session_id))
         if error is not None:
             raise error
         yield from items or []
 
     monkeypatch.setattr(shim, "iter_muse_stream", fake_iter)
+    return calls
 
 
 def _stream_request(server, **extra):
@@ -605,16 +640,24 @@ def _stream_request(server, **extra):
 
 
 def test_stream_completion_emits_sse_deltas(server, monkeypatch):
+    # Hybrid: deltas stream live from the subscription and the finished
+    # wait text is the closing confirmation only, never re-emitted.
     monkeypatch.setattr(shim, "API_KEYS", [])
-    _patch_stream(
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "World", "response": "receipt"})
+    _patch_listen_hybrid(
         monkeypatch,
         items=[
             ("event", event("message.user", "n1")),
             ("event", event("delta.text_append", "a1", "Wor")),
             ("event", event("delta.text_append", "a1", "ld")),
             ("event", event("delta.message_done", "a1", "World")),
-            ("result", {"ok": True}),
         ],
+    )
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop on hybrid path")),
     )
     status, content_type, raw = _stream_request(server)
     assert status == 200
@@ -622,30 +665,171 @@ def test_stream_completion_emits_sse_deltas(server, monkeypatch):
     text = raw.decode()
     assert '"content": "Wor"' in text
     assert '"content": "ld"' in text
+    assert '"content": "World"' not in text
     assert '"finish_reason": "stop"' in text
     assert "data: [DONE]" in text
+    prompt, session_id, wait_s = calls[0]
+    assert session_id == "pi-main"
+    assert "[limen]" not in prompt
+    assert wait_s == 30
+
+
+def test_stream_hybrid_emits_wait_text_when_no_deltas(server, monkeypatch):
+    # No live deltas (side chat): the finished wait text is the reply.
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(
+        monkeypatch, reply={"ok": True, "reply": "waited full text", "response": "receipt"}
+    )
+    _patch_listen_hybrid(monkeypatch, items=[("event", event("message.user", "n1"))])
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop on hybrid path")),
+    )
+    status, _, raw = _stream_request(server)
+    assert status == 200
+    text = raw.decode()
+    assert '"content": "waited full text"' in text
+    assert '"finish_reason": "stop"' in text
+    assert "data: [DONE]" in text
+    prompt, session_id, wait_s = calls[0]
+    assert session_id == "pi-main"
+    assert "[limen]" not in prompt
+    assert wait_s == 30
+
+
+def test_stream_hybrid_accepts_partial_wait_reply(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(
+        monkeypatch,
+        reply={
+            "ok": True,
+            "reply": "partial text",
+            "partial": True,
+            "detail": "no answer within 30 seconds",
+            "response": "receipt",
+        },
+    )
+    _patch_listen_hybrid(monkeypatch, items=[("event", event("message.user", "n1"))])
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop on hybrid path")),
+    )
+    status, _, raw = _stream_request(server)
+    assert status == 200
+    assert '"content": "partial text"' in raw.decode()
 
 
 def test_stream_result_failure_before_headers_is_502(server, monkeypatch):
+    # The wait send is rejected, so the legacy path runs and its
+    # failing result still answers 502 before any chunk.
     monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(monkeypatch, reply={"ok": False, "error": "wait rejected"})
+    _patch_listen_hybrid(monkeypatch, items=[("event", event("message.user", "n1"))])
     _patch_stream(monkeypatch, items=[("result", {"ok": False, "error": "nope"})])
     status, _, raw = _stream_request(server)
     assert status == 502
     assert "nope" in _json_body(raw)["error"]["message"]
 
 
+def test_stream_hybrid_wait_text_differs_keeps_streamed_text(server, monkeypatch):
+    # Deltas streamed "abc" but the finished wait text says something
+    # else: the streamed text stands, the wait text is not re-emitted.
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(monkeypatch, reply={"ok": True, "reply": "different", "response": "receipt"})
+    _patch_listen_hybrid(
+        monkeypatch,
+        items=[
+            ("event", event("message.user", "n1")),
+            ("event", event("delta.text_append", "a1", "abc")),
+            ("event", event("delta.message_done", "a1", "abc")),
+        ],
+    )
+    status, _, raw = _stream_request(server)
+    assert status == 200
+    text = raw.decode()
+    assert '"content": "abc"' in text
+    assert '"content": "different"' not in text
+    assert "data: [DONE]" in text
+
+
+def test_stream_hybrid_empty_wait_falls_back_to_receipt(server, monkeypatch):
+    # The wait yields no text: the receipt payload is the reply.
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(
+        monkeypatch,
+        reply={
+            "ok": True,
+            "reply": None,
+            "detail": "no answer within 30 seconds",
+            "response": "receipt text",
+        },
+    )
+    _patch_listen_hybrid(monkeypatch, items=[("event", event("message.user", "n1"))])
+    status, _, raw = _stream_request(server)
+    assert status == 200
+    assert '"content": "receipt text"' in raw.decode()
+
+
+def test_stream_hybrid_send_failure_after_deltas_finishes(server, monkeypatch):
+    # Deltas streamed but the wait send failed: the stream still
+    # finishes with what streamed instead of failing the request.
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, error=OSError("down"))
+    _patch_listen_hybrid(
+        monkeypatch,
+        items=[
+            ("event", event("message.user", "n1")),
+            ("event", event("delta.text_append", "a1", "abc")),
+            ("event", event("delta.message_done", "a1", "abc")),
+        ],
+    )
+    status, _, raw = _stream_request(server)
+    assert status == 200
+    text = raw.decode()
+    assert '"content": "abc"' in text
+    assert "data: [DONE]" in text
+    assert len(calls) == 1
+
+
+def test_stream_hybrid_subscription_never_opens_is_502(server, monkeypatch):
+    # The subscription never opens, so the sender gives up without
+    # sending and the request fails instead of hanging.
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "never sent"})
+    _patch_listen_hybrid(monkeypatch, items=[], set_ready=False)
+    status, _, raw = _stream_request(server)
+    assert status == 502
+    assert "unreachable" in _json_body(raw)["error"]["message"]
+    assert calls == []
+
+
 def test_stream_socket_failure_before_headers_is_502(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
-    _patch_stream(monkeypatch, error=OSError("down"))
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(monkeypatch, error=OSError("down"))
+    _patch_listen_hybrid(monkeypatch, error=OSError("down"))
     status, _, raw = _stream_request(server)
     assert status == 502
     assert "unreachable" in _json_body(raw)["error"]["message"]
 
 
 def test_stream_falls_back_to_reply_drop(server, monkeypatch):
+    # The wait send is rejected (concurrent wait on the same session),
+    # so the legacy path runs: send without wait, subscription, drop.
     monkeypatch.setattr(shim, "API_KEYS", [])
     monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
-    _patch_stream(
+    calls = _patch_ask(monkeypatch, reply={"ok": False, "error": "wait locked"})
+    _patch_listen_hybrid(monkeypatch, items=[("event", event("message.user", "n1"))])
+    stream_calls = _patch_stream(
         monkeypatch,
         items=[("event", event("message.user", "n1")), ("result", {"ok": True})],
     )
@@ -653,6 +837,11 @@ def test_stream_falls_back_to_reply_drop(server, monkeypatch):
     status, _, raw = _stream_request(server)
     assert status == 200
     assert '"content": "fallback text"' in raw.decode()
+    prompt, session_id, wait_s = calls[0]
+    assert session_id == "pi-main"
+    assert "[limen]" not in prompt
+    assert wait_s == 30
+    assert "[limen]" in stream_calls[0][0]
 
 
 def test_stream_no_drop_and_no_result_text(server, monkeypatch):
@@ -668,14 +857,20 @@ def test_stream_no_drop_and_no_result_text(server, monkeypatch):
 
 def test_stream_done_text_mismatch_still_completes(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
-    _patch_stream(
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(monkeypatch, reply={"ok": True, "reply": "abc", "response": "receipt"})
+    _patch_listen_hybrid(
         monkeypatch,
         items=[
             ("event", event("message.user", "n1")),
             ("event", event("delta.text_append", "a1", "abc")),
             ("event", event("delta.message_done", "a1", "abX")),
-            ("result", {"ok": True}),
         ],
+    )
+    monkeypatch.setattr(
+        shim,
+        "wait_for_reply",
+        lambda cid, deadline: (_ for _ in ()).throw(AssertionError("no drop on hybrid path")),
     )
     status, _, raw = _stream_request(server)
     assert status == 200
@@ -683,7 +878,12 @@ def test_stream_done_text_mismatch_still_completes(server, monkeypatch):
 
 
 def test_stream_failure_after_headers_still_finishes(server, monkeypatch):
+    # The wait send is rejected, so the legacy path runs; its late
+    # result failure still finishes the stream with what streamed.
     monkeypatch.setattr(shim, "API_KEYS", [])
+    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
+    _patch_ask(monkeypatch, reply={"ok": False, "error": "wait rejected"})
+    _patch_listen_hybrid(monkeypatch, items=[("event", event("message.user", "n1"))])
     _patch_stream(
         monkeypatch,
         items=[
@@ -719,6 +919,60 @@ def _patch_listen(monkeypatch, items=None, error=None):
         yield from items or []
 
     monkeypatch.setattr(shim, "iter_muse_listen", fake_listen)
+
+
+def _patch_listen_hybrid(monkeypatch, items=None, error=None, set_ready=True):
+    """Fake iter_muse_listen for the hybrid path: sets ready, yields items.
+
+    The fake models events that arrived before the wait completed, so
+    it yields every scripted item without checking stop. With
+    set_ready False the subscription never opens, so the sender waits
+    and gives up once the drain ends.
+    """
+
+    def fake_listen(session_id, ready=None, stop=None):
+        if set_ready and ready is not None:
+            ready.set()
+        if error is not None:
+            raise error
+        yield from items or []
+
+    monkeypatch.setattr(shim, "iter_muse_listen", fake_listen)
+
+
+def test_stream_legacy_socket_failure_is_502(server, monkeypatch):
+    # wait_reply False skips the hybrid; the legacy socket failure is a 502.
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    _patch_stream(monkeypatch, error=OSError("down"))
+    status, _, raw = _stream_request(server, wait_reply=False)
+    assert status == 502
+    assert "unreachable" in _json_body(raw)["error"]["message"]
+
+
+def test_stream_listen_socket_failure_is_502(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    _patch_listen(monkeypatch, error=OSError("down"))
+    status, _, raw = _request(
+        server,
+        "POST",
+        "/v1/chat/completions",
+        body={"stream": True, "listen_only": True, "session_id": "sess-1"},
+    )
+    assert status == 502
+    assert "unreachable" in _json_body(raw)["error"]["message"]
+
+
+def test_stream_listen_result_failure_is_502(server, monkeypatch):
+    monkeypatch.setattr(shim, "API_KEYS", [])
+    _patch_listen(monkeypatch, items=[("result", {"ok": False, "error": "nope"})])
+    status, _, raw = _request(
+        server,
+        "POST",
+        "/v1/chat/completions",
+        body={"stream": True, "listen_only": True, "session_id": "sess-1"},
+    )
+    assert status == 502
+    assert "nope" in _json_body(raw)["error"]["message"]
 
 
 def test_stream_listen_only_observes_live_turn_without_drop(server, monkeypatch):

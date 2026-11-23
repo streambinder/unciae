@@ -32,14 +32,18 @@ correlation.
 Model addressing: the model names a Muse and, optionally, a
 conversation inside it: "<alias>" for that Muse's main chat,
 "<alias>/<uuid>" for one conversation, "<alias>/main" for the main
-chat spelled out. "limen" is the default model and names the default
-Muse. The conversation in the model wins over the X-Session-Id
-header (or the session_id/user body field); with a bare model the
-header wins, and with neither the turn goes to the main chat.
-Unknown aliases get a 404 model_not_found; a conversation part that
-is neither "main" nor a UUID gets a 400. Aliases come from
-SHIM_MODEL_ALIASES at startup. For the main chat the socket request
-omits session_id, which the service routes to the main chat, so no
+chat spelled out. There is no default model: at startup the shim
+learns the attached Muse's name from the gadget service (one
+{"op": "identity"} line on the socket, answered by patch_identity.py
+with GET /identity) and serves it as its model. SHIM_MODEL_ALIASES
+adds further names for the same Muse and is the fallback when
+discovery fails; with neither the shim refuses to start. The
+conversation in the model wins over the X-Session-Id header (or the
+session_id/user body field); with a bare model the header wins, and
+with neither the turn goes to the main chat. Unknown aliases get a
+404 model_not_found; a conversation part that is neither "main" nor
+a UUID gets a 400. For the main chat the socket request omits
+session_id, which the service routes to the main chat, so no
 main-chat id is configured anywhere.
 
 Reply protocol: for a non-streaming call the shim asks the service to
@@ -82,11 +86,11 @@ from typing import Any, Literal
 SOCKET_PATH = os.environ.get("MUSEGADGET_SOCKET", "/run/musegadget/musegadget.sock")
 PORT = int(os.environ.get("SHIM_PORT", "8001"))
 TIMEOUT_S = int(os.environ.get("SHIM_TIMEOUT_S", "1800"))
-MODEL_ID = os.environ.get("SHIM_MODEL_ID", "limen")
 MODEL_ALIASES = [
-    a.strip() for a in os.environ.get("SHIM_MODEL_ALIASES", "tiro").split(",") if a.strip()
+    a.strip() for a in os.environ.get("SHIM_MODEL_ALIASES", "").split(",") if a.strip()
 ]
-DEFAULT_ALIAS = MODEL_ALIASES[0] if MODEL_ALIASES else MODEL_ID
+DISCOVERY_WAIT_S = int(os.environ.get("SHIM_DISCOVERY_WAIT_S", "60"))
+DISCOVERY_POLL_S = 2.0
 REPLIES_DIR = os.environ.get("SHIM_REPLIES_DIR", "/workspace/replies")
 REPLY_WAIT_S = int(os.environ.get("SHIM_REPLY_WAIT_S", "600"))
 MAX_WAIT_S = 600  # upstream service limit for the "wait" socket field
@@ -153,7 +157,6 @@ class ModelAddressError(ValueError):
 def resolve_model(model: str, session_source: str | None) -> ModelRoute:
     """Resolve a model address to a Muse alias and a conversation.
 
-    "limen" (the configured default model id) names the default Muse;
     "<alias>" names that Muse; "<alias>/<uuid>" names a conversation
     inside it; "<alias>/main" is the explicit main chat. The
     conversation in the model wins over the session source (the
@@ -162,12 +165,9 @@ def resolve_model(model: str, session_source: str | None) -> ModelRoute:
     the main chat.
     """
     name, sep, conversation = model.strip().partition("/")
-    if name == MODEL_ID:
-        alias = DEFAULT_ALIAS
-    elif name in MODEL_ALIASES:
-        alias = name
-    else:
+    if name not in MODEL_ALIASES:
         raise ModelAddressError(f"The model `{model}` does not exist", 404, "model_not_found")
+    alias = name
     if not sep:
         session_id = sanitize_session_id(session_source) if session_source else None
         return ModelRoute(alias, session_id)
@@ -183,11 +183,10 @@ def resolve_model(model: str, session_source: str | None) -> ModelRoute:
 
 
 def model_list() -> list[dict[str, Any]]:
-    """The models this shim serves: the default first, then each alias."""
-    ids = [MODEL_ID] + [a for a in MODEL_ALIASES if a != MODEL_ID]
+    """The models this shim serves: the discovered name plus configured aliases."""
     return [
-        {"id": model_id, "object": "model", "created": 0, "owned_by": "musegadget-shim"}
-        for model_id in ids
+        {"id": alias, "object": "model", "created": 0, "owned_by": "musegadget-shim"}
+        for alias in MODEL_ALIASES
     ]
 
 
@@ -268,7 +267,11 @@ def ask_muse(prompt: str, session_id: str | None, wait_s: int | None = None) -> 
         payload["session_id"] = session_id
     if wait_s is not None:
         payload["wait"] = wait_s
-    request = json.dumps(payload).encode() + b"\n"
+    return _socket_line(json.dumps(payload).encode() + b"\n")
+
+
+def _socket_line(request: bytes) -> dict[str, Any]:
+    """Send one JSON line on the socket and return the one-line reply."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(TIMEOUT_S)
         sock.connect(SOCKET_PATH)
@@ -281,6 +284,46 @@ def ask_muse(prompt: str, session_id: str | None, wait_s: int | None = None) -> 
             buf += chunk
     reply: dict[str, Any] = json.loads(bytes(buf))
     return reply
+
+
+def _query_identity_once() -> tuple[str | None, str | None]:
+    """One identity query: (name, None) on success, (None, reason) on failure.
+
+    One {"op": "identity"} line on the socket; the service
+    (patch_identity.py) answers with the GET /identity payload.
+    """
+    try:
+        reply = _socket_line(json.dumps({"op": "identity"}).encode() + b"\n")
+    except (OSError, ValueError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    if not isinstance(reply, dict) or not reply.get("ok"):
+        error = reply.get("error") if isinstance(reply, dict) else "bad reply"
+        return None, str(error)
+    identity = reply.get("identity")
+    name = identity.get("name") if isinstance(identity, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        return None, "no name in identity"
+    return name.strip(), None
+
+
+def discover_muse_name() -> str | None:
+    """Learn the attached Muse's name, retrying until the deadline.
+
+    At startup the service may not be registered yet, so a failed
+    query is retried every DISCOVERY_POLL_S seconds for up to
+    DISCOVERY_WAIT_S seconds. Returns None when the service never
+    answers with a name.
+    """
+    deadline = time.monotonic() + DISCOVERY_WAIT_S
+    reason: str | None = None
+    while True:
+        name, reason = _query_identity_once()
+        if name is not None:
+            return name
+        if time.monotonic() >= deadline:
+            log(f"identity discovery failed after {DISCOVERY_WAIT_S}s: {reason}")
+            return None
+        time.sleep(DISCOVERY_POLL_S)
 
 
 def _iter_socket(
@@ -786,7 +829,10 @@ class Handler(BaseHTTPRequestHandler):
         if not prompt and not listen_only:
             self._send_json(400, {"error": {"message": "no message content"}})
             return
-        model = str(body.get("model") or MODEL_ID).strip() or MODEL_ID
+        model = str(body.get("model") or "").strip()
+        if not model:
+            self._send_json(400, {"error": {"message": "no model specified"}})
+            return
         session_source = (
             body.get("session_id") or body.get("user") or self.headers.get("X-Session-Id")
         )
@@ -863,6 +909,15 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    discovered = discover_muse_name()
+    if discovered is not None:
+        if discovered not in MODEL_ALIASES:
+            MODEL_ALIASES.insert(0, discovered)
+        log(f"discovered Muse model `{discovered}`")
+    if not MODEL_ALIASES:
+        raise SystemExit(
+            "no Muse model found: identity discovery failed and SHIM_MODEL_ALIASES is not set"
+        )
     prepare_replies_dir()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     log(f"listening on :{PORT}, socket={SOCKET_PATH}, timeout={TIMEOUT_S}s")

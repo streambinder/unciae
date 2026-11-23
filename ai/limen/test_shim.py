@@ -30,6 +30,11 @@ def load_shim():
 shim = load_shim()
 
 
+@pytest.fixture(autouse=True)
+def configured_aliases(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro"])
+
+
 def event(name, mid="", text="", reply_to=""):
     return {
         "event": name,
@@ -73,12 +78,11 @@ def test_sanitize_session_id():
 # model addressing
 
 
-def test_resolve_model_default_names_default_muse_main(monkeypatch):
-    monkeypatch.setattr(shim, "MODEL_ID", "limen")
-    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro"])
-    monkeypatch.setattr(shim, "DEFAULT_ALIAS", "tiro")
-    assert shim.resolve_model("limen", None) == shim.ModelRoute("tiro", None)
-    assert shim.resolve_model("limen", "sess-9") == shim.ModelRoute("tiro", "sess-9")
+def test_resolve_model_default_id_is_unknown():
+    with pytest.raises(shim.ModelAddressError) as exc:
+        shim.resolve_model("limen", None)
+    assert exc.value.status == 404
+    assert exc.value.code == "model_not_found"
 
 
 def test_resolve_model_bare_alias_uses_header_session():
@@ -130,12 +134,10 @@ def test_model_route_equality_and_repr():
     assert repr(route) == "ModelRoute(alias='tiro', session_id=None)"
 
 
-def test_model_list_default_first_then_aliases(monkeypatch):
-    monkeypatch.setattr(shim, "MODEL_ID", "limen")
+def test_model_list_lists_configured_aliases(monkeypatch):
     monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro", "other"])
-    assert [m["id"] for m in shim.model_list()] == ["limen", "tiro", "other"]
+    assert [m["id"] for m in shim.model_list()] == ["tiro", "other"]
     monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro"])
-    monkeypatch.setattr(shim, "MODEL_ID", "tiro")
     assert [m["id"] for m in shim.model_list()] == ["tiro"]
 
 
@@ -520,16 +522,15 @@ def test_get_models_open(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
     status, _, raw = _request(server, "GET", "/v1/models")
     assert status == 200
-    assert _json_body(raw)["data"][0]["id"] == shim.MODEL_ID
+    assert [m["id"] for m in _json_body(raw)["data"]] == ["tiro"]
 
 
-def test_get_models_lists_default_first_then_aliases(server, monkeypatch):
+def test_get_models_lists_configured_aliases(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
-    monkeypatch.setattr(shim, "MODEL_ID", "limen")
     monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro", "other"])
     status, _, raw = _request(server, "GET", "/v1/models")
     assert status == 200
-    assert [m["id"] for m in _json_body(raw)["data"]] == ["limen", "tiro", "other"]
+    assert [m["id"] for m in _json_body(raw)["data"]] == ["tiro", "other"]
 
 
 def test_get_models_auth(server, monkeypatch):
@@ -633,7 +634,7 @@ def test_post_completion_uses_wait_reply_text(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"messages": [{"role": "user", "content": "hi"}], "user": "bob"},
+        body={"messages": [{"role": "user", "content": "hi"}], "model": "tiro", "user": "bob"},
     )
     assert status == 200
     assert _json_body(raw)["choices"][0]["message"]["content"] == "waited text"
@@ -660,7 +661,7 @@ def test_post_completion_accepts_partial_wait_reply(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"messages": [{"role": "user", "content": "hi"}]},
+        body={"messages": [{"role": "user", "content": "hi"}], "model": "tiro"},
     )
     assert status == 200
     assert _json_body(raw)["choices"][0]["message"]["content"] == "partial text"
@@ -687,7 +688,7 @@ def test_post_completion_falls_back_when_wait_empty(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"messages": [{"role": "user", "content": "hi"}]},
+        body={"messages": [{"role": "user", "content": "hi"}], "model": "tiro"},
     )
     assert status == 200
     assert _json_body(raw)["choices"][0]["message"]["content"] == "nested"
@@ -738,14 +739,11 @@ def test_post_bare_model_without_header_goes_to_main(server, monkeypatch):
     assert calls == [("user: hi", None, 30)]
 
 
-def test_post_no_model_without_header_goes_to_main(server, monkeypatch):
+def test_post_missing_model_is_400(server, monkeypatch):
     monkeypatch.setattr(shim, "API_KEYS", [])
-    monkeypatch.setattr(shim, "REPLY_WAIT_S", 30)
-    calls = _patch_ask(monkeypatch, reply={"ok": True, "reply": "text", "response": "r"})
     status, _, raw = _completion_request(server, {"messages": [{"role": "user", "content": "hi"}]})
-    assert status == 200
-    assert _json_body(raw)["model"] == "limen"
-    assert calls == [("user: hi", None, 30)]
+    assert status == 400
+    assert "no model specified" in _json_body(raw)["error"]["message"]
 
 
 def test_post_unknown_model_is_404(server, monkeypatch):
@@ -777,7 +775,11 @@ def test_post_completion_unextractable_response_is_json_dumped(server, monkeypat
         server,
         "POST",
         "/v1/chat/completions",
-        body={"messages": [{"role": "user", "content": "hi"}], "wait_reply": False},
+        body={
+            "messages": [{"role": "user", "content": "hi"}],
+            "model": "tiro",
+            "wait_reply": False,
+        },
     )
     assert status == 200
     assert _json_body(raw)["choices"][0]["message"]["content"] == "null"
@@ -790,7 +792,7 @@ def test_post_completion_socket_failure_is_502(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"messages": [{"role": "user", "content": "hi"}]},
+        body={"messages": [{"role": "user", "content": "hi"}], "model": "tiro"},
     )
     assert status == 502
     assert "unreachable" in _json_body(raw)["error"]["message"]
@@ -803,7 +805,7 @@ def test_post_completion_failed_turn_is_502(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"messages": [{"role": "user", "content": "hi"}]},
+        body={"messages": [{"role": "user", "content": "hi"}], "model": "tiro"},
     )
     assert status == 502
     assert "bad turn" in _json_body(raw)["error"]["message"]
@@ -823,7 +825,7 @@ def _patch_stream(monkeypatch, items=None, error=None):
 
 
 def _stream_request(server, **extra):
-    body = {"messages": [{"role": "user", "content": "hi"}], "stream": True}
+    body = {"messages": [{"role": "user", "content": "hi"}], "stream": True, "model": "tiro"}
     body.update(extra)
     return _request(server, "POST", "/v1/chat/completions", body=body)
 
@@ -1166,7 +1168,7 @@ def test_stream_listen_socket_failure_is_502(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"stream": True, "listen_only": True, "session_id": "sess-1"},
+        body={"stream": True, "listen_only": True, "model": "tiro", "session_id": "sess-1"},
     )
     assert status == 502
     assert "unreachable" in _json_body(raw)["error"]["message"]
@@ -1179,7 +1181,7 @@ def test_stream_listen_result_failure_is_502(server, monkeypatch):
         server,
         "POST",
         "/v1/chat/completions",
-        body={"stream": True, "listen_only": True, "session_id": "sess-1"},
+        body={"stream": True, "listen_only": True, "model": "tiro", "session_id": "sess-1"},
     )
     assert status == 502
     assert "nope" in _json_body(raw)["error"]["message"]
@@ -1207,7 +1209,7 @@ def test_stream_listen_only_observes_live_turn_without_drop(server, monkeypatch)
         server,
         "POST",
         "/v1/chat/completions",
-        body={"stream": True, "listen_only": True, "session_id": "sess-1"},
+        body={"stream": True, "listen_only": True, "model": "tiro", "session_id": "sess-1"},
     )
     assert status == 200
     text = raw.decode()
@@ -1230,7 +1232,9 @@ def test_stream_response_disables_proxy_buffering(server, monkeypatch):
     conn.request(
         "POST",
         "/v1/chat/completions",
-        body=json.dumps({"stream": True, "listen_only": True, "session_id": "sess-1"}),
+        body=json.dumps(
+            {"stream": True, "listen_only": True, "model": "tiro", "session_id": "sess-1"}
+        ),
         headers={"Content-Type": "application/json"},
     )
     response = conn.getresponse()
@@ -1251,6 +1255,7 @@ def test_listen_only_without_stream_is_400(server, monkeypatch):
 def test_main_starts_server(monkeypatch, tmp_path):
     monkeypatch.setattr(shim, "REPLIES_DIR", str(tmp_path))
     monkeypatch.setattr(shim, "API_KEYS", ["k1"])
+    monkeypatch.setattr(shim, "discover_muse_name", lambda: None)
     served = {}
 
     class FakeServer:
@@ -1265,3 +1270,133 @@ def test_main_starts_server(monkeypatch, tmp_path):
     shim.main()
     assert served["started"] is True
     assert served["handler"] is shim.Handler
+
+
+def test_main_refuses_start_without_aliases(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ALIASES", [])
+    monkeypatch.setattr(shim, "discover_muse_name", lambda: None)
+    with pytest.raises(SystemExit, match="SHIM_MODEL_ALIASES"):
+        shim.main()
+
+
+def _patch_socket(monkeypatch, replies):
+    """Answer AF_UNIX sockets with `replies` in order (bytes or Exception)."""
+    real_socket = socket.socket
+    queue = list(replies)
+    sent: list[bytes] = []
+
+    class FakeSocket:
+        def __init__(self):
+            item = queue.pop(0) if queue else b""
+            if isinstance(item, Exception):
+                raise item
+            self._reply = item
+
+        def settimeout(self, timeout):
+            pass
+
+        def connect(self, path):
+            pass
+
+        def sendall(self, data):
+            sent.append(data)
+
+        def recv(self, size):
+            reply, self._reply = self._reply, b""
+            return reply
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def factory(family, *args, **kwargs):
+        if family == socket.AF_UNIX:
+            return FakeSocket()
+        return real_socket(family, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "socket", factory)
+    return sent
+
+
+def test_query_identity_once_returns_name(monkeypatch):
+    sent = _patch_socket(monkeypatch, [b'{"ok": true, "identity": {"name": "Tiro"}}\n'])
+    assert shim._query_identity_once() == ("Tiro", None)
+    assert sent == [b'{"op": "identity"}\n']
+
+
+def test_query_identity_once_returns_none_when_not_connected(monkeypatch):
+    _patch_socket(monkeypatch, [b'{"ok": false, "error": "not connected to the Muse"}\n'])
+    assert shim._query_identity_once() == (None, "not connected to the Muse")
+
+
+def test_query_identity_once_returns_none_on_unparseable_reply(monkeypatch):
+    _patch_socket(monkeypatch, [b"not json\n"])
+    name, reason = shim._query_identity_once()
+    assert name is None
+    assert "JSONDecodeError" in reason
+
+
+def test_query_identity_once_returns_none_on_socket_error(monkeypatch):
+    _patch_socket(monkeypatch, [FileNotFoundError("no socket")])
+    name, reason = shim._query_identity_once()
+    assert name is None
+    assert "FileNotFoundError" in reason
+
+
+def test_discover_muse_name_retries_then_succeeds(monkeypatch):
+    calls = []
+
+    def fake_query():
+        calls.append(1)
+        return ("Tiro", None) if len(calls) == 3 else (None, "not connected")
+
+    monkeypatch.setattr(shim, "_query_identity_once", fake_query)
+    monkeypatch.setattr(shim, "DISCOVERY_POLL_S", 0)
+    assert shim.discover_muse_name() == "Tiro"
+    assert len(calls) == 3
+
+
+def test_discover_muse_name_returns_none_after_deadline(monkeypatch):
+    monkeypatch.setattr(shim, "_query_identity_once", lambda: (None, "down"))
+    monkeypatch.setattr(shim, "DISCOVERY_WAIT_S", 0)
+    assert shim.discover_muse_name() is None
+
+
+def _fake_main_server(monkeypatch):
+    """Stub the HTTP server and the replies dir so main() returns."""
+    monkeypatch.setattr(shim, "prepare_replies_dir", lambda: None)
+
+    class FakeServer:
+        def __init__(self, address, handler):
+            pass
+
+        def serve_forever(self):
+            return None
+
+    monkeypatch.setattr(shim, "ThreadingHTTPServer", FakeServer)
+
+
+def test_main_registers_discovered_name_first(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["other"])
+    monkeypatch.setattr(shim, "discover_muse_name", lambda: "Tiro")
+    _fake_main_server(monkeypatch)
+    shim.main()
+    assert shim.MODEL_ALIASES == ["Tiro", "other"]
+
+
+def test_main_does_not_duplicate_discovered_name(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["Tiro"])
+    monkeypatch.setattr(shim, "discover_muse_name", lambda: "Tiro")
+    _fake_main_server(monkeypatch)
+    shim.main()
+    assert shim.MODEL_ALIASES == ["Tiro"]
+
+
+def test_main_falls_back_to_env_aliases_when_discovery_fails(monkeypatch):
+    monkeypatch.setattr(shim, "MODEL_ALIASES", ["tiro"])
+    monkeypatch.setattr(shim, "discover_muse_name", lambda: None)
+    _fake_main_server(monkeypatch)
+    shim.main()
+    assert shim.MODEL_ALIASES == ["tiro"]

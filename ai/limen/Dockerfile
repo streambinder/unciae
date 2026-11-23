@@ -55,6 +55,14 @@ RUN python3 /tmp/patch_subscribe.py \
         /opt/musegadget/venv/lib/python3.11/site-packages/musegadget/service.py \
     && rm /tmp/patch_subscribe.py
 
+# Patch: answer {"op": "identity"} on the local socket with the
+# attached Muse's identity, so the shim learns its model name.
+COPY patch_identity.py /tmp/patch_identity.py
+RUN python3 /tmp/patch_identity.py \
+    && grep -n '_local_identity' \
+        /opt/musegadget/venv/lib/python3.11/site-packages/musegadget/service.py \
+    && rm /tmp/patch_identity.py
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY shim.py /opt/shim/shim.py
 RUN chmod +x /usr/local/bin/entrypoint.sh

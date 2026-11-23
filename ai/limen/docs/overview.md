@@ -65,19 +65,19 @@ container health check tests for the gadget socket.
 
 ### Environment variables
 
-| Variable               | Default                           | Meaning                                            |
-| ---------------------- | --------------------------------- | -------------------------------------------------- |
-| `MUSEGADGET_SOCKET`    | `/run/musegadget/musegadget.sock` | Unix socket of the gadget service                  |
-| `SHIM_PORT`            | `8001`                            | Port of the shim HTTP server                       |
-| `SHIM_TIMEOUT_S`       | `1800`                            | Socket timeout for one turn                        |
-| `SHIM_MODEL_ID`        | `limen`                           | Model ID reported by `/v1/models`                  |
-| `SHIM_MODEL_ALIASES`   | `tiro`                            | Comma-separated Muse aliases                       |
-| `SHIM_REPLIES_DIR`     | `/workspace/replies`              | Reply drop directory                               |
-| `SHIM_REPLY_WAIT_S`    | `600`                             | Seconds to wait for a reply                        |
-| `SHIM_API_KEYS`        | (empty)                           | Comma-separated API keys                           |
-| `MUSEGADGET_SDK_TOKEN` | (none)                            | SDK token, written to the state directory at start |
-| `MUSEGADGET_STATE_DIR` | `/var/lib/musegadget`             | State directory                                    |
-| `MUSEGADGET_RUN_AS`    | `gadget`                          | Account that runs gadget commands                  |
+| Variable                | Default                           | Meaning                                                                             |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| `MUSEGADGET_SOCKET`     | `/run/musegadget/musegadget.sock` | Unix socket of the gadget service                                                   |
+| `SHIM_PORT`             | `8001`                            | Port of the shim HTTP server                                                        |
+| `SHIM_TIMEOUT_S`        | `1800`                            | Socket timeout for one turn                                                         |
+| `SHIM_MODEL_ALIASES`    | (none)                            | Comma-separated extra Muse aliases for the same Muse; fallback when discovery fails |
+| `SHIM_DISCOVERY_WAIT_S` | `60`                              | Seconds to wait for the service at startup while learning the Muse name             |
+| `SHIM_REPLIES_DIR`      | `/workspace/replies`              | Reply drop directory                                                                |
+| `SHIM_REPLY_WAIT_S`     | `600`                             | Seconds to wait for a reply                                                         |
+| `SHIM_API_KEYS`         | (empty)                           | Comma-separated API keys                                                            |
+| `MUSEGADGET_SDK_TOKEN`  | (none)                            | SDK token, written to the state directory at start                                  |
+| `MUSEGADGET_STATE_DIR`  | `/var/lib/musegadget`             | State directory                                                                     |
+| `MUSEGADGET_RUN_AS`     | `gadget`                          | Account that runs gadget commands                                                   |
 
 With no `SHIM_API_KEYS` set, the shim is open. Use that mode on
 trusted networks only. With keys set, every `/v1/*` request needs a
@@ -104,7 +104,7 @@ A client needs three values.
 
 - `baseUrl`: the URL where you expose the shim, with the `/v1`
   path.
-- `model`: a Muse address (`limen` by default). See
+- `model`: a Muse address. See
   [Model addressing](#model-addressing).
 - Session: a real Muse session UUID, sent as the `X-Session-Id`
   header. The shim also accepts `session_id` or `user` in the
@@ -168,20 +168,26 @@ mode requires `stream: true`.
 
 ### Models and health
 
-`GET /v1/models` lists the default model first, then each alias.
+`GET /v1/models` lists the discovered Muse name first, then the configured aliases.
 `GET /healthz` returns 200 when the gadget socket exists
 and 503 when it does not. The health endpoint needs no key.
 
 ### Model addressing
 
 The model in a completion request names a Muse and, optionally, a
-conversation inside it. The default model is `limen`. `limen` is
-the generic default. It names the default Muse and its main chat.
-It is not tied to one Muse. The first alias is the default Muse.
+conversation inside it. There is no default model: at startup the
+shim learns the attached Muse's name from the gadget service and
+serves it as its model. `SHIM_MODEL_ALIASES` adds further names for
+the same Muse and is the fallback when discovery fails; with
+neither the shim refuses to start.
+
+Discovery asks the service for the Muse identity (`GET /identity`)
+through the local socket. The service may not be registered yet
+when the shim starts, so discovery retries for up to
+`SHIM_DISCOVERY_WAIT_S` seconds.
 
 A model value has one of these forms:
 
-- `limen`: the default Muse, main chat.
 - `<alias>`: that Muse, main chat.
 - `<alias>/main`: that Muse, main chat, spelled out.
 - `<alias>/<uuid>`: that conversation inside that Muse.
@@ -193,7 +199,7 @@ The conversation in the model wins over the session source. The
 session source is the `X-Session-Id` header, then the `session_id`
 body field, then the `user` body field. With a bare model the session
 source wins. With neither the turn goes to the main chat. A client
-that sends no model is treated as `limen`. A client that sends no
+that sends no model gets a 400. A client that sends no
 session source and a bare model lands on the main chat.
 
 An unknown alias gets a 404 with code `model_not_found`.

@@ -479,3 +479,13 @@ repository. Each kind of information has one authoritative place.
   executes the commands or approves the execution.
 - A backup precedes every incremental migration. The verification
   proves the new state and proves that no data was lost.
+
+## 27. Private Information in Public Repositories
+
+- Public code never carries private information.
+- Private information includes names of people and assistants,
+  identity text, hostnames, account names, addresses, and
+  credentials.
+- Test fixtures use clearly fake generic values.
+- Examples in documentation use generic values, never real ones.
+- Commit messages and PR descriptions name no real subject (see §24).

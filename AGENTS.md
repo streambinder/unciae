@@ -460,3 +460,22 @@ repository. Each kind of information has one authoritative place.
   Lint excludes the files that the tool manages, through targeted
   rules only. Nobody edits a managed file by hand. A project that
   replaces the tool records the replacement as a decision.
+
+## 26. Database Migrations
+
+- Code-side migrations create only the canonical schema.
+- The canonical schema is the schema a clean database needs.
+- Code-side migrations run on every start. Code-side migrations
+  never alter an existing table. Code-side migrations never rename
+  a table or a column. Code-side migrations never rewrite stored
+  values. Code-side migrations never insert seed data.
+- A rename, an alter, and a value rewrite are incremental
+  migrations.
+- An incremental migration never runs from code. An incremental
+  migration runs by hand, once, against the live database.
+- The agent proposes the commands for the incremental migration
+  before the rollout. The proposal states the backup command, the
+  migration commands, and the verification commands. The owner
+  executes the commands or approves the execution.
+- A backup precedes every incremental migration. The verification
+  proves the new state and proves that no data was lost.

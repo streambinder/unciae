@@ -240,6 +240,13 @@ async def npm() -> CommandGenerator:
 
 @dep(cmd="pi")
 async def pi() -> CommandGenerator:
+    # self-update only for the managed installer layout
+    # (~/.local/bin/pi -> ~/.pi/agent/bin/pi); a package-manager copy
+    # (Homebrew, npm, Nix) resolves elsewhere and owns its own updates.
+    if (pi := shutil.which("pi")) and Path(pi).resolve().is_relative_to(
+        Path.home() / ".pi" / "agent"
+    ):
+        yield ["pi", "update", "--self"], {}
     yield ["pi", "update", "--extensions"], {}
     yield ["pi", "update", "--models"], {}
 

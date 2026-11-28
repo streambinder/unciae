@@ -13,6 +13,7 @@ import signal
 import stat
 import sys
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any, ClassVar, Self
 
 import main
@@ -116,6 +117,54 @@ def test_is_os_and_is_exec() -> None:
     assert not main.is_os("plan9")
     assert main.is_exec("sh")
     assert not main.is_exec("renovo-cmd-that-does-not-exist")
+
+
+def _make_pi_executable(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n")
+    path.chmod(0o755)
+
+
+def test_pi_dep_self_updates_when_managed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    launcher = home / ".pi" / "agent" / "bin" / "pi"
+    _make_pi_executable(launcher)
+    link_dir = tmp_path / "bin"
+    link_dir.mkdir()
+    (link_dir / "pi").symlink_to(launcher)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", str(link_dir))
+    pi = run(_collect(main.pi.__wrapped__()))  # type: ignore[attr-defined]
+    assert [args for args, _ in pi] == [
+        ["pi", "update", "--self"],
+        ["pi", "update", "--extensions"],
+        ["pi", "update", "--models"],
+    ]
+
+
+def test_pi_dep_skips_self_update_when_not_managed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cellar = tmp_path / "Cellar" / "pi-coding-agent" / "1.6.0" / "bin"
+    _make_pi_executable(cellar / "pi")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("PATH", str(cellar))
+    pi = run(_collect(main.pi.__wrapped__()))  # type: ignore[attr-defined]
+    assert [args for args, _ in pi] == [
+        ["pi", "update", "--extensions"],
+        ["pi", "update", "--models"],
+    ]
+
+
+def test_pi_dep_skips_self_update_without_pi(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    pi = run(_collect(main.pi.__wrapped__()))  # type: ignore[attr-defined]
+    assert [args for args, _ in pi] == [
+        ["pi", "update", "--extensions"],
+        ["pi", "update", "--models"],
+    ]
 
 
 # spawn / terminate / streams
